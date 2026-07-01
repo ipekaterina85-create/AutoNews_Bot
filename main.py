@@ -61,28 +61,21 @@ bot = TeleBot(BOT_TOKEN)
 apihelper.ENABLE_MIDDLEWARE = True
 
 # ============================================
-# MYMEMORY ПЕРЕВОДЧИК (БЕСПЛАТНО, БЕЗ КАРТ, БЕЗ API-КЛЮЧЕЙ)
+# QWEN TRANSLATE API (через OpenRouter)
 # ============================================
 
-class MyMemoryTranslator:
-    """
-    Бесплатный переводчик MyMemory
-    - Без регистрации
-    - Без API-ключей
-    - Без карт
-    - Лимит: 5000 символов/день (без email) или 50000 (с email)
-    """
+class QwenTranslator:
+    """Переводчик на базе Qwen через OpenRouter API"""
     
-    def __init__(self, email=''):
-        self.translate_url = "https://api.mymemory.translated.net/get"
-        self.email = email
+    def __init__(self, api_key, model='qwen/qwen-2.5-7b-instruct:free'):
+        self.api_key = api_key
+        self.model = model
+        self.api_url = "https://openrouter.ai/api/v1/chat/completions"
         self.last_call_time = 0
-        self.min_interval = 1.5  # 1.5 сек между запросами
-        self.daily_chars_used = 0
-        self.daily_limit = 50000 if email else 5000
+        self.min_interval = 0.5  # Пауза между запросами
         
-    def translate(self, text, source_lang='en', target_lang='ru'):
-        """Перевод текста"""
+    def translate(self, text, source_lang='English', target_lang='Russian'):
+        """Перевод текста через Qwen"""
         if not text or len(text.strip()) == 0:
             return ""
         
@@ -90,95 +83,72 @@ class MyMemoryTranslator:
         if self._is_russian(text):
             return text
         
-        # Проверка дневного лимита
-        if self.daily_chars_used + len(text) > self.daily_limit:
-            logger.warning(f"⚠️ Дневной лимит MyMemory исчерпан ({self.daily_limit} символов)")
-            return text
-        
         try:
             # Защита от частых запросов
             now = time.time()
-            time_since_last = now - self.last_call_time
-            if time_since_last < self.min_interval:
-                time.sleep(self.min_interval - time_since_last)
+            if now - self.last_call_time < self.min_interval:
+                time.sleep(self.min_interval - (now - self.last_call_time))
             
-            # MyMemory лимит: 500 символов за запрос
-            if len(text) > 480:
-                parts = self._split_text(text, 480)
-                translated_parts = []
-                for part in parts:
-                    translated_part = self._translate_chunk(part, source_lang, target_lang)
-                    translated_parts.append(translated_part)
-                    time.sleep(0.5)
-                return ' '.join(translated_parts)
+            # Ограничение длины
+            if len(text) > 3000:
+                text = text[:3000]
             
-            result = self._translate_chunk(text, source_lang, target_lang)
-            return result
+            # УЛУЧШЕННЫЙ ПРОМПТ ДЛЯ АВТО-ТЕМАТИКИ (Код 2)
+            system_prompt = f"""You are an expert automotive journalist and translator.
+Translate the following text from {source_lang} to {target_lang}.
+
+Translation rules:
+1. Use professional automotive journalism style.
+2. Keep brand names in original (Tesla, Ferrari, BMW, Lada — do not translate).
+3. Translate technical terms correctly:
+   - "range" → "запас хода" (not "диапазон")
+   - "charging" → "зарядка"
+   - "horsepower" → "лошадиных сил"
+   - "torque" → "крутящий момент"
+4. Use natural Russian language, not literal translation.
+5. Preserve the tone (exciting for news, professional for specs).
+6. Do not add or remove information.
+7. Return ONLY the translated text, no comments."""
+            
+            # Запрос к API
+            headers = {
+                'Authorization': f'Bearer {self.api_key}',
+                'Content-Type': 'application/json'
+            }
+            
+            data = {
+                'model': self.model,
+                'messages': [
+                    {'role': 'system', 'content': system_prompt},
+                    {'role': 'user', 'content': text}
+                ],
+                'temperature': 0.3,  # Низкая температура для точности
+                'max_tokens': 1000
+            }
+            
+            response = requests.post(
+                self.api_url,
+                headers=headers,
+                json=data,
+                timeout=30
+            )
+            response.raise_for_status()
+            
+            result = response.json()
+            
+            if 'choices' in result and len(result['choices']) > 0:
+                translated = result['choices'][0]['message']['content'].strip()
+                self.last_call_time = time.time()
+                return translated
+            
+            return text
             
         except Exception as e:
-            logger.warning(f"Ошибка MyMemory: {e}")
+            logger.warning(f"Ошибка Qwen перевода: {e}")
             return text
     
-    def _translate_chunk(self, text, source_lang, target_lang):
-        """Перевод одного куска текста"""
-        params = {
-            'q': text,
-            'langpair': f'{source_lang}|{target_lang}'
-        }
-        
-        # Добавляем email для увеличения лимита
-        if self.email:
-            params['de'] = self.email
-        
-        response = requests.get(
-            self.translate_url,
-            params=params,
-            timeout=15
-        )
-        response.raise_for_status()
-        
-        result = response.json()
-        
-        if 'responseStatus' in result and result['responseStatus'] == 200:
-            if 'responseData' in result and result['responseData']:
-                translated = result['responseData']['translatedText']
-                self.last_call_time = time.time()
-                self.daily_chars_used += len(text)
-                return translated
-        
-        # Если основная база не дала результат — пробуем альтернативные переводы
-        if 'matches' in result and result['matches']:
-            # Берём перевод с наибольшим совпадением
-            best_match = max(result['matches'], key=lambda x: x.get('match', 0))
-            if best_match.get('match', 0) > 0.5:
-                translated = best_match.get('translation', text)
-                self.last_call_time = time.time()
-                self.daily_chars_used += len(text)
-                return translated
-        
-        return text
-    
-    def _split_text(self, text, max_length):
-        """Разбиение текста на части по предложениям"""
-        sentences = re.split(r'(?<=[.!?])\s+', text)
-        parts = []
-        current_part = ""
-        
-        for sentence in sentences:
-            if len(current_part) + len(sentence) + 1 <= max_length:
-                current_part = current_part + " " + sentence if current_part else sentence
-            else:
-                if current_part:
-                    parts.append(current_part)
-                current_part = sentence
-        
-        if current_part:
-            parts.append(current_part)
-        
-        return parts if parts else [text[:max_length]]
-    
     def _is_russian(self, text):
-        """Проверка, что текст уже на русском"""
+        """Проверка, что текст на русском"""
         if not text:
             return False
         cyrillic = sum(1 for c in text if 'а' <= c.lower() <= 'я')
@@ -191,21 +161,31 @@ class MyMemoryTranslator:
 # ИНИЦИАЛИЗАЦИЯ ПЕРЕВОДЧИКА
 # ============================================
 
+QWEN_API_KEY = os.environ.get('QWEN_API_KEY', '')
+QWEN_MODEL = os.environ.get('QWEN_MODEL', 'qwen/qwen-2.5-7b-instruct:free')
+
 translator = None
 
 if ENABLE_TRANSLATION:
-    try:
-        translator = MyMemoryTranslator(email=MYMEMORY_EMAIL)
-        test = translator.translate("Hello world", "en", "ru")
-        logger.info(f"✅ MyMemory инициализирован. Тест: 'Hello world' → '{test}'")
-        if MYMEMORY_EMAIL:
-            logger.info(f"📧 Email для MyMemory: {MYMEMORY_EMAIL} (лимит 50000 символов/день)")
-        else:
-            logger.info(f"⚠️ Email не указан. Лимит MyMemory: 5000 символов/день")
-            logger.info(f"💡 Добавьте MYMEMORY_EMAIL в Railway для увеличения лимита до 50000")
-    except Exception as e:
-        logger.error(f"❌ Ошибка инициализации MyMemory: {e}")
-        translator = None
+    if QWEN_API_KEY:
+        try:
+            translator = QwenTranslator(
+                api_key=QWEN_API_KEY,
+                model=QWEN_MODEL
+            )
+            
+            # Тестовый перевод
+            test = translator.translate("Hello world", "English", "Russian")
+            logger.info(f"✅ Qwen Translator инициализирован")
+            logger.info(f"🤖 Модель: {QWEN_MODEL}")
+            logger.info(f"🧪 Тест: 'Hello world' → '{test}'")
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка инициализации Qwen: {e}")
+            translator = None
+            ENABLE_TRANSLATION = False
+    else:
+        logger.warning("⚠️ QWEN_API_KEY не установлен. Перевод отключён.")
         ENABLE_TRANSLATION = False
 else:
     logger.info("Перевод отключён")
