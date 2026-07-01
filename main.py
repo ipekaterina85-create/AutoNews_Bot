@@ -712,7 +712,7 @@ def calculate_news_score(entry, feed_info):
     # 🇺 КОРРЕКТИРОВКА: понижаем рейтинг российских новостей на 30%
     # чтобы они составляли ~15-17% от публикаций (1 из 6-7)
     if feed_info.get('lang') == 'ru':
-        score *= 0.7
+        score *= 1.7
     
     return round(score, 2), matched_keywords
 
