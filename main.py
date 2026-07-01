@@ -5,8 +5,6 @@ import re
 import logging
 import signal
 import sys
-import base64
-import json
 from datetime import datetime
 from pathlib import Path
 
@@ -14,7 +12,6 @@ import feedparser
 import requests
 from telebot import TeleBot, types
 from telebot import apihelper
-import jwt  # PyJWT для авторизации
 
 # ============================================
 # КОНФИГУРАЦИЯ
@@ -70,77 +67,29 @@ if PROXY_URL:
     logger.info(f"Используется прокси: {PROXY_URL}")
 
 # ============================================
-# ЯНДЕКС TRANSLATE API
+# ЯНДЕКС TRANSLATE API (УПРОЩЁННАЯ ВЕРСИЯ)
 # ============================================
 
 class YandexTranslator:
-    """Класс для работы с Яндекс Translate API"""
+    """Простой класс для работы с Яндекс Translate API"""
     
-    def __init__(self, folder_id, service_account_id, private_key):
+    def __init__(self, api_key, folder_id):
+        self.api_key = api_key
         self.folder_id = folder_id
-        self.service_account_id = service_account_id
-        self.private_key = private_key
-        self.iam_token = None
-        self.iam_token_expires = 0
         self.translate_url = "https://translate.api.cloud.yandex.net/translate/v2/translate"
-        self.iam_url = "https://iam.api.cloud.yandex.net/iam/v1/tokens"
         
-    def get_iam_token(self):
-        """Получение IAM-токена для авторизации"""
-        # Если токен ещё действителен — используем его
-        if self.iam_token and time.time() < self.iam_token_expires - 60:
-            return self.iam_token
-        
-        try:
-            # Создаём JWT для получения IAM-токена
-            now = int(time.time())
-            payload = {
-                'aud': 'https://iam.api.cloud.yandex.net/iam/v1/tokens',
-                'iss': self.service_account_id,
-                'iat': now,
-                'exp': now + 3600
-            }
-            
-            # Подписываем JWT
-            encoded_token = jwt.encode(
-                payload,
-                self.private_key,
-                algorithm='PS256',
-                headers={'kid': self.service_account_id}
-            )
-            
-            # Запрашиваем IAM-токен
-            response = requests.post(
-                self.iam_url,
-                json={'jwt': encoded_token},
-                timeout=10
-            )
-            response.raise_for_status()
-            
-            self.iam_token = response.json()['iamToken']
-            self.iam_token_expires = time.time() + 3600  # Токен живёт 1 час
-            
-            logger.info("✅ IAM-токен Яндекс получен успешно")
-            return self.iam_token
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка получения IAM-токена: {e}")
-            raise
-    
     def translate(self, text, source_lang='en', target_lang='ru'):
         """Перевод текста"""
         if not text or len(text.strip()) == 0:
             return ""
         
         try:
-            # Ограничение на длину (Яндекс: 10000 символов за запрос)
+            # Ограничение на длину
             if len(text) > 9500:
                 text = text[:9500]
             
-            iam_token = self.get_iam_token()
-            
             headers = {
-                'Authorization': f'Bearer {iam_token}',
+                'Authorization': f'Api-Key {self.api_key}',
                 'Content-Type': 'application/json'
             }
             
@@ -172,23 +121,17 @@ class YandexTranslator:
 # Инициализация переводчика
 if ENABLE_TRANSLATION:
     try:
-        # Проверяем наличие всех необходимых переменных
-        if not YC_FOLDER_ID or not YC_SERVICE_ACCOUNT_ID or not YC_PRIVATE_KEY:
+        # Проверяем наличие переменных
+        YANDEX_API_KEY = os.environ.get('YANDEX_API_KEY')
+        YC_FOLDER_ID = os.environ.get('YC_FOLDER_ID')
+        
+        if not YANDEX_API_KEY or not YC_FOLDER_ID:
             raise ValueError(
                 "❌ Не настроены переменные Яндекс Cloud! "
-                "Нужны: YC_FOLDER_ID, YC_SERVICE_ACCOUNT_ID, YC_PRIVATE_KEY"
+                "Нужны: YANDEX_API_KEY, YC_FOLDER_ID"
             )
         
-        # Преобразуем приватный ключ (может быть в base64)
-        private_key = YC_PRIVATE_KEY
-        if not private_key.startswith('-----BEGIN'):
-            # Если ключ в base64 — декодируем
-            try:
-                private_key = base64.b64decode(private_key).decode('utf-8')
-            except:
-                pass
-        
-        translator = YandexTranslator(YC_FOLDER_ID, YC_SERVICE_ACCOUNT_ID, private_key)
+        translator = YandexTranslator(YANDEX_API_KEY, YC_FOLDER_ID)
         
         # Проверяем работоспособность
         test_translation = translator.translate("Hello world", "en", "ru")
