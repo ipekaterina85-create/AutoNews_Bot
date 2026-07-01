@@ -215,12 +215,12 @@ else:
 # ============================================
 
 RSS_FEEDS = [
-    # 🇷🇺 Российские (на русском, не переводим)
+    # 🇷 РОССИЙСКИЕ ИСТОЧНИКИ (на русском, не переводим)
     {
         'name': 'Авто.ру Журнал',
         'url': 'https://auto.ru/journal/export/rss/all.xml',
         'lang': 'ru',
-        'region': '🇷🇺',
+        'region': '🇷',
         'priority': 'high',
         'weight': 2
     },
@@ -228,7 +228,7 @@ RSS_FEEDS = [
         'name': 'Автостат',
         'url': 'https://www.autostat.ru/feed/',
         'lang': 'ru',
-        'region': '🇷🇺',
+        'region': '🇷',
         'priority': 'medium',
         'weight': 1.5
     },
@@ -249,13 +249,29 @@ RSS_FEEDS = [
         'priority': 'high',
         'weight': 2
     },
+    {
+        'name': 'Motor.ru',
+        'url': 'https://motor.ru/rss/',
+        'lang': 'ru',
+        'region': '🇷🇺',
+        'priority': 'high',
+        'weight': 2
+    },
+    {
+        'name': 'РГ (Авто)',
+        'url': 'https://rg.ru/rss/auto.xml',
+        'lang': 'ru',
+        'region': '🇷',
+        'priority': 'medium',
+        'weight': 1.5
+    },
     
-    # 🇬🇧 Британские
+    # 🇬🇧 БРИТАНСКИЕ ИСТОЧНИКИ
     {
         'name': 'Autocar UK',
         'url': 'https://www.autocar.co.uk/rss',
         'lang': 'en',
-        'region': '🇬🇧',
+        'region': '🇬',
         'priority': 'high',
         'weight': 1.5
     },
@@ -263,12 +279,20 @@ RSS_FEEDS = [
         'name': 'Auto Express',
         'url': 'https://www.autoexpress.co.uk/rss',
         'lang': 'en',
-        'region': '🇬🇧',
+        'region': '🇬',
         'priority': 'medium',
         'weight': 1
     },
+    {
+        'name': 'Top Gear',
+        'url': 'https://www.topgear.com/rss',
+        'lang': 'en',
+        'region': '🇬🇧',
+        'priority': 'high',
+        'weight': 2
+    },
     
-    # 🇺🇸 Американские
+    # 🇺🇸 АМЕРИКАНСКИЕ ИСТОЧНИКИ
     {
         'name': 'Car and Driver',
         'url': 'https://www.caranddriver.com/rss/all.xml/',
@@ -281,7 +305,7 @@ RSS_FEEDS = [
         'name': 'Motor1',
         'url': 'https://www.motor1.com/rss/news/all/',
         'lang': 'en',
-        'region': '🇺🇸',
+        'region': '🇺',
         'priority': 'high',
         'weight': 1.5
     },
@@ -293,8 +317,62 @@ RSS_FEEDS = [
         'priority': 'medium',
         'weight': 1
     },
+    {
+        'name': 'Road & Track',
+        'url': 'https://www.roadandtrack.com/rss/all.xml/',
+        'lang': 'en',
+        'region': '🇺🇸',
+        'priority': 'high',
+        'weight': 1.5
+    },
+    {
+        'name': 'The Drive',
+        'url': 'https://www.thedrive.com/rss',
+        'lang': 'en',
+        'region': '🇺🇸',
+        'priority': 'high',
+        'weight': 1.5
+    },
     
-    # 🌍 Международные
+    # 🇩 НЕМЕЦКИЕ ИСТОЧНИКИ
+    {
+        'name': 'Auto Bild',
+        'url': 'https://www.autobild.de/rss/rss.xml',
+        'lang': 'de',
+        'region': '🇩🇪',
+        'priority': 'high',
+        'weight': 1.5
+    },
+    {
+        'name': 'Auto Motor Sport',
+        'url': 'https://www.auto-motor-und-sport.de/rss/',
+        'lang': 'de',
+        'region': '🇩🇪',
+        'priority': 'high',
+        'weight': 1.5
+    },
+    
+    # 🇯🇵 ЯПОНСКИЕ ИСТОЧНИКИ
+    {
+        'name': 'Best Car Web',
+        'url': 'https://www.bestcarweb.jp/rss',
+        'lang': 'ja',
+        'region': '🇯🇵',
+        'priority': 'high',
+        'weight': 2
+    },
+    
+    # 🇨 КИТАЙСКИЕ ИСТОЧНИКИ
+    {
+        'name': 'Gasgoo',
+        'url': 'https://autonews.gasgoo.com/rss',
+        'lang': 'en',
+        'region': '🇨',
+        'priority': 'high',
+        'weight': 2
+    },
+    
+    # 🌍 МЕЖДУНАРОДНЫЕ (ЭЛЕКТРОМОБИЛИ)
     {
         'name': 'Electrek',
         'url': 'https://electrek.co/feed/',
@@ -313,8 +391,26 @@ RSS_FEEDS = [
         'category': 'electric',
         'weight': 2
     },
+    {
+        'name': 'Green Car Reports',
+        'url': 'https://www.greencarreports.com/rss',
+        'lang': 'en',
+        'region': '🌍',
+        'priority': 'high',
+        'category': 'electric',
+        'weight': 2
+    },
+    {
+        'name': 'InsideEVs',
+        'url': 'https://insideevs.com/rss/all/',
+        'lang': 'en',
+        'region': '🌍',
+        'priority': 'high',
+        'category': 'electric',
+        'weight': 2
+    },
     
-    # 🏁 Автоспорт
+    # 🏁 АВТОСПОРТ
     {
         'name': 'Autosport',
         'url': 'https://www.autosport.com/rss/feed/all',
@@ -324,8 +420,36 @@ RSS_FEEDS = [
         'category': 'motorsport',
         'weight': 1.5
     },
+    {
+        'name': 'Planet F1',
+        'url': 'https://www.planetf1.com/rss',
+        'lang': 'en',
+        'region': '🌍',
+        'priority': 'high',
+        'category': 'motorsport',
+        'weight': 2
+    },
+    {
+        'name': 'Crash.net',
+        'url': 'https://www.crash.net/rss',
+        'lang': 'en',
+        'region': '🌍',
+        'priority': 'medium',
+        'category': 'motorsport',
+        'weight': 1.5
+    },
+    
+    # 💎 ЛЮКС И СУПЕРКАРЫ
+    {
+        'name': 'Supercar Blondie',
+        'url': 'https://supercarblondie.com/feed/',
+        'lang': 'en',
+        'region': '🌍',
+        'priority': 'high',
+        'category': 'luxury',
+        'weight': 2
+    },
 ]
-
 # ============================================
 # СИСТЕМА РЕЙТИНГА
 # ============================================
