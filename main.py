@@ -61,21 +61,28 @@ bot = TeleBot(BOT_TOKEN)
 apihelper.ENABLE_MIDDLEWARE = True
 
 # ============================================
-# HUGGINGFACE TRANSLATE API (БЕСПЛАТНО, НАДЁЖНО)
+# MYMEMORY ПЕРЕВОДЧИК (БЕСПЛАТНО, БЕЗ КАРТ, БЕЗ API-КЛЮЧЕЙ)
 # ============================================
 
-class HuggingFaceTranslator:
-    """Переводчик на базе Qwen через HuggingFace API"""
+class MyMemoryTranslator:
+    """
+    Бесплатный переводчик MyMemory
+    - Без регистрации
+    - Без API-ключей
+    - Без карт
+    - Лимит: 5000 символов/день (без email) или 50000 (с email)
+    """
     
-    def __init__(self, api_token, model='Qwen/Qwen2.5-72B-Instruct'):
-        self.api_token = api_token
-        self.model = model
-        self.api_url = f"https://api-inference.huggingface.co/models/{model}"
+    def __init__(self, email=''):
+        self.translate_url = "https://api.mymemory.translated.net/get"
+        self.email = email
         self.last_call_time = 0
-        self.min_interval = 1.0  # HuggingFace может быть медленнее
+        self.min_interval = 1.5  # 1.5 сек между запросами
+        self.daily_chars_used = 0
+        self.daily_limit = 50000 if email else 5000
         
-    def translate(self, text, source_lang='English', target_lang='Russian'):
-        """Перевод текста через HuggingFace"""
+    def translate(self, text, source_lang='en', target_lang='ru'):
+        """Перевод текста"""
         if not text or len(text.strip()) == 0:
             return ""
         
@@ -83,77 +90,95 @@ class HuggingFaceTranslator:
         if self._is_russian(text):
             return text
         
+        # Проверка дневного лимита
+        if self.daily_chars_used + len(text) > self.daily_limit:
+            logger.warning(f"⚠️ Дневной лимит MyMemory исчерпан ({self.daily_limit} символов)")
+            return text
+        
         try:
             # Защита от частых запросов
             now = time.time()
-            if now - self.last_call_time < self.min_interval:
-                time.sleep(self.min_interval - (now - self.last_call_time))
+            time_since_last = now - self.last_call_time
+            if time_since_last < self.min_interval:
+                time.sleep(self.min_interval - time_since_last)
             
-            # Ограничение длины
-            if len(text) > 2000:
-                text = text[:2000]
+            # MyMemory лимит: 500 символов за запрос
+            if len(text) > 480:
+                parts = self._split_text(text, 480)
+                translated_parts = []
+                for part in parts:
+                    translated_part = self._translate_chunk(part, source_lang, target_lang)
+                    translated_parts.append(translated_part)
+                    time.sleep(0.5)
+                return ' '.join(translated_parts)
             
-            # Промпт для авто-тематики
-            prompt = f"""Translate the following automotive news from {source_lang} to {target_lang}.
-
-Rules:
-- Use professional automotive journalism style
-- Keep brand names in original (Tesla, Ferrari, BMW, Lada)
-- Translate technical terms correctly:
-  * "range" → "запас хода"
-  * "charging" → "зарядка"
-  * "horsepower" → "лошадиных сил"
-  * "torque" → "крутящий момент"
-- Use natural Russian language
-- Return ONLY the translated text
-
-Text to translate:
-{text}"""
-            
-            headers = {
-                'Authorization': f'Bearer {self.api_token}',
-                'Content-Type': 'application/json'
-            }
-            
-            data = {
-                'inputs': prompt,
-                'parameters': {
-                    'max_new_tokens': 1000,
-                    'temperature': 0.3,
-                    'return_full_text': False
-                }
-            }
-            
-            response = requests.post(
-                self.api_url,
-                headers=headers,
-                json=data,
-                timeout=60  # HuggingFace может быть медленнее
-            )
-            response.raise_for_status()
-            
-            result = response.json()
-            
-            # HuggingFace возвращает список с одним элементом
-            if isinstance(result, list) and len(result) > 0:
-                if 'generated_text' in result[0]:
-                    translated = result[0]['generated_text'].strip()
-                    self.last_call_time = time.time()
-                    
-                    # Убираем возможные артефакты промпта
-                    if 'Text to translate:' in translated:
-                        translated = translated.split('Text to translate:')[-1].strip()
-                    
-                    return translated
-            
-            return text
+            result = self._translate_chunk(text, source_lang, target_lang)
+            return result
             
         except Exception as e:
-            logger.warning(f"Ошибка HuggingFace перевода: {e}")
+            logger.warning(f"Ошибка MyMemory: {e}")
             return text
     
+    def _translate_chunk(self, text, source_lang, target_lang):
+        """Перевод одного куска текста"""
+        params = {
+            'q': text,
+            'langpair': f'{source_lang}|{target_lang}'
+        }
+        
+        # Добавляем email для увеличения лимита
+        if self.email:
+            params['de'] = self.email
+        
+        response = requests.get(
+            self.translate_url,
+            params=params,
+            timeout=15
+        )
+        response.raise_for_status()
+        
+        result = response.json()
+        
+        if 'responseStatus' in result and result['responseStatus'] == 200:
+            if 'responseData' in result and result['responseData']:
+                translated = result['responseData']['translatedText']
+                self.last_call_time = time.time()
+                self.daily_chars_used += len(text)
+                return translated
+        
+        # Если основная база не дала результат — пробуем альтернативные переводы
+        if 'matches' in result and result['matches']:
+            # Берём перевод с наибольшим совпадением
+            best_match = max(result['matches'], key=lambda x: x.get('match', 0))
+            if best_match.get('match', 0) > 0.5:
+                translated = best_match.get('translation', text)
+                self.last_call_time = time.time()
+                self.daily_chars_used += len(text)
+                return translated
+        
+        return text
+    
+    def _split_text(self, text, max_length):
+        """Разбиение текста на части по предложениям"""
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        parts = []
+        current_part = ""
+        
+        for sentence in sentences:
+            if len(current_part) + len(sentence) + 1 <= max_length:
+                current_part = current_part + " " + sentence if current_part else sentence
+            else:
+                if current_part:
+                    parts.append(current_part)
+                current_part = sentence
+        
+        if current_part:
+            parts.append(current_part)
+        
+        return parts if parts else [text[:max_length]]
+    
     def _is_russian(self, text):
-        """Проверка, что текст на русском"""
+        """Проверка, что текст уже на русском"""
         if not text:
             return False
         cyrillic = sum(1 for c in text if 'а' <= c.lower() <= 'я')
@@ -166,33 +191,21 @@ Text to translate:
 # ИНИЦИАЛИЗАЦИЯ ПЕРЕВОДЧИКА
 # ============================================
 
-HF_API_TOKEN = os.environ.get('HF_API_TOKEN', '')
-HF_MODEL = os.environ.get('HF_MODEL', 'Qwen/Qwen2.5-72B-Instruct')
-
 translator = None
 
 if ENABLE_TRANSLATION:
-    if HF_API_TOKEN:
-        try:
-            translator = HuggingFaceTranslator(
-                api_token=HF_API_TOKEN,
-                model=HF_MODEL
-            )
-            
-            # Тестовый перевод
-            test = translator.translate("Tesla unveiled new Model S with 500 miles range", "English", "Russian")
-            logger.info(f"✅ HuggingFace Translator инициализирован")
-            logger.info(f"🤖 Модель: {HF_MODEL}")
-            logger.info(f"🧪 Тест перевода:")
-            logger.info(f"   EN: 'Tesla unveiled new Model S with 500 miles range'")
-            logger.info(f"   RU: '{test}'")
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка инициализации HuggingFace: {e}")
-            translator = None
-            ENABLE_TRANSLATION = False
-    else:
-        logger.warning("⚠️ HF_API_TOKEN не установлен. Перевод отключён.")
+    try:
+        translator = MyMemoryTranslator(email=MYMEMORY_EMAIL)
+        test = translator.translate("Hello world", "en", "ru")
+        logger.info(f"✅ MyMemory инициализирован. Тест: 'Hello world' → '{test}'")
+        if MYMEMORY_EMAIL:
+            logger.info(f"📧 Email для MyMemory: {MYMEMORY_EMAIL} (лимит 50000 символов/день)")
+        else:
+            logger.info(f"⚠️ Email не указан. Лимит MyMemory: 5000 символов/день")
+            logger.info(f"💡 Добавьте MYMEMORY_EMAIL в Railway для увеличения лимита до 50000")
+    except Exception as e:
+        logger.error(f"❌ Ошибка инициализации MyMemory: {e}")
+        translator = None
         ENABLE_TRANSLATION = False
 else:
     logger.info("Перевод отключён")
@@ -202,7 +215,42 @@ else:
 # ============================================
 
 RSS_FEEDS = [
-    # 🇬🇧 БРИТАНСКИЕ (РАБОЧИЕ)
+    # 🇷🇺 Российские (на русском, не переводим)
+    {
+        'name': 'Авто.ру Журнал',
+        'url': 'https://auto.ru/journal/export/rss/all.xml',
+        'lang': 'ru',
+        'region': '🇷🇺',
+        'priority': 'high',
+        'weight': 2
+    },
+    {
+        'name': 'Автостат',
+        'url': 'https://www.autostat.ru/feed/',
+        'lang': 'ru',
+        'region': '🇷🇺',
+        'priority': 'medium',
+        'weight': 1.5
+    },
+    {
+        'name': 'F1-News.ru',
+        'url': 'https://www.f1news.ru/rss/',
+        'lang': 'ru',
+        'region': '🌍',
+        'priority': 'high',
+        'category': 'motorsport',
+        'weight': 2
+    },
+    {
+        'name': 'Колёса.ру',
+        'url': 'https://www.kolesa.ru/news/rss/',
+        'lang': 'ru',
+        'region': '🇷🇺',
+        'priority': 'high',
+        'weight': 2
+    },
+    
+    # 🇬🇧 Британские
     {
         'name': 'Autocar UK',
         'url': 'https://www.autocar.co.uk/rss',
@@ -219,16 +267,8 @@ RSS_FEEDS = [
         'priority': 'medium',
         'weight': 1
     },
-    {
-        'name': 'Evo Magazine',
-        'url': 'https://www.evo.co.uk/rss',
-        'lang': 'en',
-        'region': '🇬🇧',
-        'priority': 'medium',
-        'weight': 1
-    },
     
-    # 🇺🇸 АМЕРИКАНСКИЕ (РАБОЧИЕ)
+    # 🇺🇸 Американские
     {
         'name': 'Car and Driver',
         'url': 'https://www.caranddriver.com/rss/all.xml/',
@@ -246,23 +286,15 @@ RSS_FEEDS = [
         'weight': 1.5
     },
     {
-        'name': 'Road & Track',
-        'url': 'https://www.roadandtrack.com/rss/all.xml/',
+        'name': 'AutoBlog',
+        'url': 'https://www.autoblog.com/rss.xml',
         'lang': 'en',
         'region': '🇺🇸',
-        'priority': 'high',
-        'weight': 1.5
-    },
-    {
-        'name': 'The Drive',
-        'url': 'https://www.thedrive.com/rss',
-        'lang': 'en',
-        'region': '🇺🇸',
-        'priority': 'high',
-        'weight': 1.5
+        'priority': 'medium',
+        'weight': 1
     },
     
-    # 🌍 ЭЛЕКТРОМОБИЛИ (РАБОЧИЕ)
+    # 🌍 Международные
     {
         'name': 'Electrek',
         'url': 'https://electrek.co/feed/',
@@ -281,17 +313,8 @@ RSS_FEEDS = [
         'category': 'electric',
         'weight': 2
     },
-    {
-        'name': 'Green Car Reports',
-        'url': 'https://www.greencarreports.com/rss',
-        'lang': 'en',
-        'region': '🌍',
-        'priority': 'high',
-        'category': 'electric',
-        'weight': 2
-    },
     
-    # 🏁 АВТОСПОРТ (РАБОЧИЕ)
+    # 🏁 Автоспорт
     {
         'name': 'Autosport',
         'url': 'https://www.autosport.com/rss/feed/all',
@@ -301,62 +324,8 @@ RSS_FEEDS = [
         'category': 'motorsport',
         'weight': 1.5
     },
-    {
-        'name': 'Planet F1',
-        'url': 'https://www.planetf1.com/feed/',
-        'lang': 'en',
-        'region': '🌍',
-        'priority': 'high',
-        'category': 'motorsport',
-        'weight': 2
-    },
-    {
-        'name': 'Crash.net',
-        'url': 'https://www.crash.net/rss',
-        'lang': 'en',
-        'region': '🌍',
-        'priority': 'medium',
-        'category': 'motorsport',
-        'weight': 1.5
-    },
-    
-    # 💎 ЛЮКС (РАБОЧИЕ)
-    {
-        'name': 'Supercar Blondie',
-        'url': 'https://supercarblondie.com/feed/',
-        'lang': 'en',
-        'region': '🌍',
-        'priority': 'high',
-        'category': 'luxury',
-        'weight': 2
-    },
-    
-    # 📰 НОВОСТНЫЕ АГЕНТСТВА (РАБОЧИЕ)
-    {
-        'name': 'Reuters Auto',
-        'url': 'https://www.reuters.com/technology/autos-transportation/rss',
-        'lang': 'en',
-        'region': '🌍',
-        'priority': 'high',
-        'weight': 1.5
-    },
-    {
-        'name': 'CNBC Autos',
-        'url': 'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=15837362',
-        'lang': 'en',
-        'region': '🇺🇸',
-        'priority': 'high',
-        'weight': 1.5
-    },
-    {
-        'name': 'BBC Autos',
-        'url': 'https://www.topgear.com/rss',
-        'lang': 'en',
-        'region': '🇬🇧',
-        'priority': 'medium',
-        'weight': 1
-    },
 ]
+
 # ============================================
 # СИСТЕМА РЕЙТИНГА
 # ============================================
