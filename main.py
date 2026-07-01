@@ -565,4 +565,37 @@ def check_channel_access():
             return False
             
     except Exception as e:
-        logger.error(f"❌ Ошибка доступа к каналу:
+        logger.error(f"❌ Ошибка доступа к каналу: {e}")
+        return False
+
+def main():
+    logger.info("=" * 50)
+    logger.info("Auto imPulse News Bot запускается...")
+    logger.info("=" * 50)
+    
+    if not check_channel_access():
+        logger.error("❌ Нет доступа к каналу!")
+        sys.exit(1)
+    
+    send_startup_message()
+    
+    while True:
+        try:
+            new_count, error_count = fetch_and_publish()
+            logger.info(f"Следующая проверка через {CHECK_INTERVAL} секунд ({CHECK_INTERVAL // 60} минут)")
+            time.sleep(CHECK_INTERVAL)
+        except KeyboardInterrupt:
+            logger.info("Остановка по Ctrl+C")
+            break
+        except Exception as e:
+            logger.error(f"Критическая ошибка: {e}", exc_info=True)
+            time.sleep(60)
+    
+    logger.info("Бот остановлен")
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        logger.critical(f"Фатальная ошибка: {e}", exc_info=True)
+        sys.exit(1)
