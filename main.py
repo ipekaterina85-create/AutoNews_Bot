@@ -85,7 +85,13 @@ class MyMemoryTranslator:
             'самосвале': 'внедорожнике',
             'самосвалы': 'внедорожники',
             'самосвалов': 'внедорожников',
-            
+            'anti-ev': 'анти-электрического',
+            'Anti-EV': 'анти-электрического',
+            '1-из-1': 'единственный в своём роде',
+            '1-of-1': 'единственный в своём роде',
+            'one-of-one': 'единственный в своём роде',
+            'tags nostalgia': 'отсылает к ностальгии',
+            're-': '',  # Убираем обрезанные слова
             'ледяных': 'бензиновых',
             'ледяной': 'бензиновой',
             'ледяные': 'бензиновые',
@@ -415,64 +421,28 @@ else:
 # ============================================
 
 RSS_FEEDS = [
-        # 🇷🇺 РОССИЙСКИЕ ИСТОЧНИКИ (пониженный приоритет для баланса 1 из 6-7)
-    {
-        'name': 'За рулём',
-        'url': 'https://www.zr.ru/rss/',
-        'lang': 'ru',
-        'region': '🇷🇺',
-        'priority': 'medium',  # Было 'high'
-        'weight': 1.5,         # Было 2.5
-        'category': 'russia'
-    },
-    {
-        'name': 'Колёса.ру',
-        'url': 'https://www.kolesa.ru/news/rss/',
-        'lang': 'ru',
-        'region': '🇷🇺',
-        'priority': 'medium',
-        'weight': 1.5,
-        'category': 'russia'
-    },
+           # 🇷🇺 РОССИЙСКИЕ ИСТОЧНИКИ (ПРОВЕРЕННЫЕ РАБОЧИЕ)
     {
         'name': 'Дром',
-        'url': 'https://www.drom.ru/info/rss/',
+        'url': 'https://www.drom.ru/export/xml/news.rss',
         'lang': 'ru',
         'region': '🇷🇺',
-        'priority': 'medium',
-        'weight': 1.5,
+        'priority': 'high',
+        'weight': 2.0,
         'category': 'russia'
     },
     {
-        'name': 'Авто.ру Журнал',
-        'url': 'https://auto.ru/journal/export/rss/all.xml',
+        'name': 'Ведомости Авто',
+        'url': 'https://www.vedomosti.ru/rss/rubric/auto',
         'lang': 'ru',
         'region': '🇷🇺',
-        'priority': 'medium',
-        'weight': 1.5,
+        'priority': 'high',
+        'weight': 2.0,
         'category': 'russia'
     },
     {
         'name': 'Автостат',
-        'url': 'https://www.autostat.ru/feed/',
-        'lang': 'ru',
-        'region': '🇷🇺',
-        'priority': 'low',     # Было 'medium'
-        'weight': 1.0,         # Было 2
-        'category': 'russia'
-    },
-    {
-        'name': 'F1-News.ru',
-        'url': 'https://www.f1news.ru/rss/',
-        'lang': 'ru',
-        'region': '🇷🇺',
-        'priority': 'medium',
-        'weight': 1.5,
-        'category': 'motorsport'
-    },
-    {
-        'name': 'ТАСС (Авто)',
-        'url': 'https://tass.com/rss/v2.xml',
+        'url': 'https://www.autostat.ru/news/rss/',
         'lang': 'ru',
         'region': '🇷🇺',
         'priority': 'medium',
@@ -480,10 +450,10 @@ RSS_FEEDS = [
         'category': 'russia'
     },
     {
-        'name': 'РИА Новости (Авто)',
-        'url': 'https://ria.ru/export/atom/auto.xml',
+        'name': 'Коммерсантъ Автопилот',
+        'url': 'https://www.kommersant.ru/RSS/auto.xml',
         'lang': 'ru',
-        'region': '🇷',
+        'region': '🇷🇺',
         'priority': 'medium',
         'weight': 1.5,
         'category': 'russia'
@@ -826,8 +796,19 @@ def clean_html(text):
         return ""
     clean_text = re.sub('<[^<]+?>', '', text)
     clean_text = re.sub(r'\s+', ' ', clean_text)
-    return clean_text.strip()
-
+    clean_text = clean_text.strip()
+    
+    # Убираем обрезанные слова в конце (например, "re-", "anti-")
+    if clean_text.endswith('-') or clean_text.endswith('...'):
+        # Находим последнее полное слово
+        words = clean_text.split()
+        if len(words) > 1:
+            # Убираем последнее слово если оно обрезано
+            if words[-1].endswith('-') or len(words[-1]) < 3:
+                clean_text = ' '.join(words[:-1])
+    
+    return clean_text
+    
 def get_image_url(entry):
     if not ENABLE_IMAGES:
         return None
@@ -948,15 +929,27 @@ def format_message(entry, feed_info, score, category):
     return message, translated_title
 
 def send_news_to_channel(message, image_url=None):
-    """Отправка новости в канал"""
+    """Отправка новости в канал с обработкой ошибок"""
     try:
         if image_url and ENABLE_IMAGES:
-            bot.send_photo(
-                CHANNEL_ID,
-                image_url,
-                caption=message,
-                parse_mode='Markdown'
-            )
+            try:
+                bot.send_photo(
+                    CHANNEL_ID,
+                    image_url,
+                    caption=message,
+                    parse_mode='Markdown'
+                )
+                return True
+            except Exception as img_error:
+                # Если изображение не отправилось, отправляем без него
+                logger.warning(f"⚠️ Не удалось отправить изображение: {img_error}")
+                bot.send_message(
+                    CHANNEL_ID,
+                    message,
+                    parse_mode='Markdown',
+                    disable_web_page_preview=False
+                )
+                return True
         else:
             bot.send_message(
                 CHANNEL_ID,
@@ -964,7 +957,7 @@ def send_news_to_channel(message, image_url=None):
                 parse_mode='Markdown',
                 disable_web_page_preview=False
             )
-        return True
+            return True
     except Exception as e:
         logger.error(f"Ошибка отправки в канал: {e}")
         return False
