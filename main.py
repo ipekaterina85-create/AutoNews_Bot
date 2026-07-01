@@ -66,79 +66,32 @@ if PROXY_URL:
     apihelper.proxy = {'https': PROXY_URL}
     logger.info(f"Используется прокси: {PROXY_URL}")
 
-# ============================================
-# ЯНДЕКС TRANSLATE API (УПРОЩЁННАЯ ВЕРСИЯ)
-# ============================================
-
-class YandexTranslator:
-    """Простой класс для работы с Яндекс Translate API"""
+class LibreTranslate:
+    """Открытый переводчик"""
     
-    def __init__(self, api_key, folder_id):
-        self.api_key = api_key
-        self.folder_id = folder_id
-        self.translate_url = "https://translate.api.cloud.yandex.net/translate/v2/translate"
-        
+    def __init__(self):
+        self.url = "https://libretranslate.com/translate"
+    
     def translate(self, text, source_lang='en', target_lang='ru'):
-        """Перевод текста"""
-        if not text or len(text.strip()) == 0:
-            return ""
+        if not text or self._is_russian(text):
+            return text
         
         try:
-            if len(text) > 9500:
-                text = text[:9500]
-            
-            headers = {
-                'Authorization': f'Api-Key {self.api_key}',
-                'Content-Type': 'application/json'
-            }
-            
             data = {
-                'folderId': self.folder_id,
-                'texts': [text],
-                'sourceLanguageCode': source_lang,
-                'targetLanguageCode': target_lang
+                'q': text,
+                'source': source_lang,
+                'target': target_lang,
+                'format': 'text'
             }
-            
-            response = requests.post(
-                self.translate_url,
-                headers=headers,
-                json=data,
-                timeout=15
-            )
-            response.raise_for_status()
-            
-            result = response.json()
-            if 'translations' in result and len(result['translations']) > 0:
-                return result['translations'][0]['text']
-            
+            response = requests.post(self.url, json=data, timeout=10)
+            return response.json()['translatedText']
+        except:
             return text
-            
-        except Exception as e:
-            logger.warning(f"Ошибка перевода Яндекс: {e}")
-            return text
-
-# Инициализация переводчика
-if ENABLE_TRANSLATION:
-    try:
-        if not YANDEX_API_KEY or not YC_FOLDER_ID:
-            raise ValueError(
-                "❌ Не настроены переменные Яндекс Cloud! "
-                "Нужны: YANDEX_API_KEY, YC_FOLDER_ID"
-            )
         
-        translator = YandexTranslator(YANDEX_API_KEY, YC_FOLDER_ID)
-        
-        # Проверяем работоспособность
-        test_translation = translator.translate("Hello world", "en", "ru")
-        logger.info(f"✅ Яндекс Translate инициализирован. Тест: 'Hello world' → '{test_translation}'")
-        
-    except Exception as e:
-        logger.error(f"❌ Ошибка инициализации Яндекс Translate: {e}")
-        translator = None
-        ENABLE_TRANSLATION = False
-else:
-    translator = None
-    logger.info("Перевод отключён")
+    def _is_russian(self, text):
+        cyrillic = sum(1 for c in text if 'а' <= c.lower() <= 'я')
+        letters = sum(1 for c in text if c.isalpha())
+        return letters > 0 and (cyrillic / letters) > 0.5
 
 # ============================================
 # РАСШИРЕННЫЙ СПИСОК ИСТОЧНИКОВ
