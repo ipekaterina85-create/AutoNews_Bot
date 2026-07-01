@@ -61,21 +61,21 @@ bot = TeleBot(BOT_TOKEN)
 apihelper.ENABLE_MIDDLEWARE = True
 
 # ============================================
-# QWEN TRANSLATE API (через OpenRouter)
+# HUGGINGFACE TRANSLATE API (БЕСПЛАТНО, НАДЁЖНО)
 # ============================================
 
-class QwenTranslator:
-    """Переводчик на базе Qwen через OpenRouter API"""
+class HuggingFaceTranslator:
+    """Переводчик на базе Qwen через HuggingFace API"""
     
-    def __init__(self, api_key, model='qwen/qwen-2.5-7b-instruct:free'):
-        self.api_key = api_key
+    def __init__(self, api_token, model='Qwen/Qwen2.5-72B-Instruct'):
+        self.api_token = api_token
         self.model = model
-        self.api_url = "https://openrouter.ai/api/v1/chat/completions"
+        self.api_url = f"https://api-inference.huggingface.co/models/{model}"
         self.last_call_time = 0
-        self.min_interval = 0.5  # Пауза между запросами
+        self.min_interval = 1.0  # HuggingFace может быть медленнее
         
     def translate(self, text, source_lang='English', target_lang='Russian'):
-        """Перевод текста через Qwen"""
+        """Перевод текста через HuggingFace"""
         if not text or len(text.strip()) == 0:
             return ""
         
@@ -90,159 +90,66 @@ class QwenTranslator:
                 time.sleep(self.min_interval - (now - self.last_call_time))
             
             # Ограничение длины
-            if len(text) > 3000:
-                text = text[:3000]
-            
-            # УЛУЧШЕННЫЙ ПРОМПТ ДЛЯ АВТО-ТЕМАТИКИ (Код 2)
-            system_prompt = f"""You are an expert automotive journalist and translator.
-Translate the following text from {source_lang} to {target_lang}.
-
-Translation rules:
-1. Use professional automotive journalism style.
-2. Keep brand names in original (Tesla, Ferrari, BMW, Lada — do not translate).
-3. Translate technical terms correctly:
-   - "range" → "запас хода" (not "диапазон")
-   - "charging" → "зарядка"
-   - "horsepower" → "лошадиных сил"
-   - "torque" → "крутящий момент"
-4. Use natural Russian language, not literal translation.
-5. Preserve the tone (exciting for news, professional for specs).
-6. Do not add or remove information.
-7. Return ONLY the translated text, no comments."""
-            
-            # Запрос к API
-            headers = {
-                'Authorization': f'Bearer {self.api_key}',
-                'Content-Type': 'application/json'
-            }
-            
-            data = {
-                'model': self.model,
-                'messages': [
-                    {'role': 'system', 'content': system_prompt},
-                    {'role': 'user', 'content': text}
-                ],
-                'temperature': 0.3,  # Низкая температура для точности
-                'max_tokens': 1000
-            }
-            
-            response = requests.post(
-                self.api_url,
-                headers=headers,
-                json=data,
-                timeout=30
-            )
-            response.raise_for_status()
-            
-            result = response.json()
-            
-            if 'choices' in result and len(result['choices']) > 0:
-                translated = result['choices'][0]['message']['content'].strip()
-                self.last_call_time = time.time()
-                return translated
-            
-            return text
-            
-        except Exception as e:
-            logger.warning(f"Ошибка Qwen перевода: {e}")
-            return text
-    
-    def _is_russian(self, text):
-        """Проверка, что текст на русском"""
-        if not text:
-            return False
-        cyrillic = sum(1 for c in text if 'а' <= c.lower() <= 'я')
-        letters = sum(1 for c in text if c.isalpha())
-        if letters == 0:
-            return False
-        return (cyrillic / letters) > 0.5
-
-# ============================================
-# GROQ TRANSLATE API (БЕСПЛАТНО, БЫСТРО)
-# ============================================
-
-class GroqTranslator:
-    """Переводчик на базе Qwen через Groq API"""
-    
-    def __init__(self, api_key, model='qwen-2.5-32b'):
-        self.api_key = api_key
-        self.model = model
-        self.api_url = "https://api.groq.com/openai/v1/chat/completions"
-        self.last_call_time = 0
-        self.min_interval = 0.3  # Groq очень быстрый
-        
-    def translate(self, text, source_lang='English', target_lang='Russian'):
-        """Перевод текста через Groq"""
-        if not text or len(text.strip()) == 0:
-            return ""
-        
-        # Если текст уже на русском — не переводим
-        if self._is_russian(text):
-            return text
-        
-        try:
-            # Защита от частых запросов
-            now = time.time()
-            if now - self.last_call_time < self.min_interval:
-                time.sleep(self.min_interval - (now - self.last_call_time))
-            
-            # Ограничение длины
-            if len(text) > 3000:
-                text = text[:3000]
+            if len(text) > 2000:
+                text = text[:2000]
             
             # Промпт для авто-тематики
-            system_prompt = f"""You are an expert automotive journalist and translator.
-Translate the following text from {source_lang} to {target_lang}.
+            prompt = f"""Translate the following automotive news from {source_lang} to {target_lang}.
 
-Translation rules:
-1. Use professional automotive journalism style.
-2. Keep brand names in original (Tesla, Ferrari, BMW, Lada — do not translate).
-3. Translate technical terms correctly:
-   - "range" → "запас хода" (not "диапазон")
-   - "charging" → "зарядка"
-   - "horsepower" → "лошадиных сил"
-   - "torque" → "крутящий момент"
-   - "MPG" → "расход топлива"
-   - "0-60 mph" → "разгон до 100 км/ч"
-4. Use natural Russian language, not literal translation.
-5. Preserve the tone (exciting for news, professional for specs).
-6. Do not add or remove information.
-7. Return ONLY the translated text, no comments."""
+Rules:
+- Use professional automotive journalism style
+- Keep brand names in original (Tesla, Ferrari, BMW, Lada)
+- Translate technical terms correctly:
+  * "range" → "запас хода"
+  * "charging" → "зарядка"
+  * "horsepower" → "лошадиных сил"
+  * "torque" → "крутящий момент"
+- Use natural Russian language
+- Return ONLY the translated text
+
+Text to translate:
+{text}"""
             
             headers = {
-                'Authorization': f'Bearer {self.api_key}',
+                'Authorization': f'Bearer {self.api_token}',
                 'Content-Type': 'application/json'
             }
             
             data = {
-                'model': self.model,
-                'messages': [
-                    {'role': 'system', 'content': system_prompt},
-                    {'role': 'user', 'content': text}
-                ],
-                'temperature': 0.3,
-                'max_tokens': 1500
+                'inputs': prompt,
+                'parameters': {
+                    'max_new_tokens': 1000,
+                    'temperature': 0.3,
+                    'return_full_text': False
+                }
             }
             
             response = requests.post(
                 self.api_url,
                 headers=headers,
                 json=data,
-                timeout=30
+                timeout=60  # HuggingFace может быть медленнее
             )
             response.raise_for_status()
             
             result = response.json()
             
-            if 'choices' in result and len(result['choices']) > 0:
-                translated = result['choices'][0]['message']['content'].strip()
-                self.last_call_time = time.time()
-                return translated
+            # HuggingFace возвращает список с одним элементом
+            if isinstance(result, list) and len(result) > 0:
+                if 'generated_text' in result[0]:
+                    translated = result[0]['generated_text'].strip()
+                    self.last_call_time = time.time()
+                    
+                    # Убираем возможные артефакты промпта
+                    if 'Text to translate:' in translated:
+                        translated = translated.split('Text to translate:')[-1].strip()
+                    
+                    return translated
             
             return text
             
         except Exception as e:
-            logger.warning(f"Ошибка Groq перевода: {e}")
+            logger.warning(f"Ошибка HuggingFace перевода: {e}")
             return text
     
     def _is_russian(self, text):
@@ -259,33 +166,33 @@ Translation rules:
 # ИНИЦИАЛИЗАЦИЯ ПЕРЕВОДЧИКА
 # ============================================
 
-GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
-GROQ_MODEL = os.environ.get('GROQ_MODEL', 'qwen-2.5-32b')
+HF_API_TOKEN = os.environ.get('HF_API_TOKEN', '')
+HF_MODEL = os.environ.get('HF_MODEL', 'Qwen/Qwen2.5-72B-Instruct')
 
 translator = None
 
 if ENABLE_TRANSLATION:
-    if GROQ_API_KEY:
+    if HF_API_TOKEN:
         try:
-            translator = GroqTranslator(
-                api_key=GROQ_API_KEY,
-                model=GROQ_MODEL
+            translator = HuggingFaceTranslator(
+                api_token=HF_API_TOKEN,
+                model=HF_MODEL
             )
             
             # Тестовый перевод
             test = translator.translate("Tesla unveiled new Model S with 500 miles range", "English", "Russian")
-            logger.info(f"✅ Groq Translator инициализирован")
-            logger.info(f"🤖 Модель: {GROQ_MODEL}")
+            logger.info(f"✅ HuggingFace Translator инициализирован")
+            logger.info(f"🤖 Модель: {HF_MODEL}")
             logger.info(f"🧪 Тест перевода:")
             logger.info(f"   EN: 'Tesla unveiled new Model S with 500 miles range'")
             logger.info(f"   RU: '{test}'")
             
         except Exception as e:
-            logger.error(f"❌ Ошибка инициализации Groq: {e}")
+            logger.error(f"❌ Ошибка инициализации HuggingFace: {e}")
             translator = None
             ENABLE_TRANSLATION = False
     else:
-        logger.warning("⚠️ GROQ_API_KEY не установлен. Перевод отключён.")
+        logger.warning("⚠️ HF_API_TOKEN не установлен. Перевод отключён.")
         ENABLE_TRANSLATION = False
 else:
     logger.info("Перевод отключён")
