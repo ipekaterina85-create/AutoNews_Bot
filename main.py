@@ -158,34 +158,134 @@ Translation rules:
         return (cyrillic / letters) > 0.5
 
 # ============================================
+# GROQ TRANSLATE API (БЕСПЛАТНО, БЫСТРО)
+# ============================================
+
+class GroqTranslator:
+    """Переводчик на базе Qwen через Groq API"""
+    
+    def __init__(self, api_key, model='qwen-2.5-32b'):
+        self.api_key = api_key
+        self.model = model
+        self.api_url = "https://api.groq.com/openai/v1/chat/completions"
+        self.last_call_time = 0
+        self.min_interval = 0.3  # Groq очень быстрый
+        
+    def translate(self, text, source_lang='English', target_lang='Russian'):
+        """Перевод текста через Groq"""
+        if not text or len(text.strip()) == 0:
+            return ""
+        
+        # Если текст уже на русском — не переводим
+        if self._is_russian(text):
+            return text
+        
+        try:
+            # Защита от частых запросов
+            now = time.time()
+            if now - self.last_call_time < self.min_interval:
+                time.sleep(self.min_interval - (now - self.last_call_time))
+            
+            # Ограничение длины
+            if len(text) > 3000:
+                text = text[:3000]
+            
+            # Промпт для авто-тематики
+            system_prompt = f"""You are an expert automotive journalist and translator.
+Translate the following text from {source_lang} to {target_lang}.
+
+Translation rules:
+1. Use professional automotive journalism style.
+2. Keep brand names in original (Tesla, Ferrari, BMW, Lada — do not translate).
+3. Translate technical terms correctly:
+   - "range" → "запас хода" (not "диапазон")
+   - "charging" → "зарядка"
+   - "horsepower" → "лошадиных сил"
+   - "torque" → "крутящий момент"
+   - "MPG" → "расход топлива"
+   - "0-60 mph" → "разгон до 100 км/ч"
+4. Use natural Russian language, not literal translation.
+5. Preserve the tone (exciting for news, professional for specs).
+6. Do not add or remove information.
+7. Return ONLY the translated text, no comments."""
+            
+            headers = {
+                'Authorization': f'Bearer {self.api_key}',
+                'Content-Type': 'application/json'
+            }
+            
+            data = {
+                'model': self.model,
+                'messages': [
+                    {'role': 'system', 'content': system_prompt},
+                    {'role': 'user', 'content': text}
+                ],
+                'temperature': 0.3,
+                'max_tokens': 1500
+            }
+            
+            response = requests.post(
+                self.api_url,
+                headers=headers,
+                json=data,
+                timeout=30
+            )
+            response.raise_for_status()
+            
+            result = response.json()
+            
+            if 'choices' in result and len(result['choices']) > 0:
+                translated = result['choices'][0]['message']['content'].strip()
+                self.last_call_time = time.time()
+                return translated
+            
+            return text
+            
+        except Exception as e:
+            logger.warning(f"Ошибка Groq перевода: {e}")
+            return text
+    
+    def _is_russian(self, text):
+        """Проверка, что текст на русском"""
+        if not text:
+            return False
+        cyrillic = sum(1 for c in text if 'а' <= c.lower() <= 'я')
+        letters = sum(1 for c in text if c.isalpha())
+        if letters == 0:
+            return False
+        return (cyrillic / letters) > 0.5
+
+# ============================================
 # ИНИЦИАЛИЗАЦИЯ ПЕРЕВОДЧИКА
 # ============================================
 
-QWEN_API_KEY = os.environ.get('QWEN_API_KEY', '')
-QWEN_MODEL = os.environ.get('QWEN_MODEL', 'qwen/qwen-2.5-7b-instruct:free')
+GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
+GROQ_MODEL = os.environ.get('GROQ_MODEL', 'qwen-2.5-32b')
 
 translator = None
 
 if ENABLE_TRANSLATION:
-    if QWEN_API_KEY:
+    if GROQ_API_KEY:
         try:
-            translator = QwenTranslator(
-                api_key=QWEN_API_KEY,
-                model=QWEN_MODEL
+            translator = GroqTranslator(
+                api_key=GROQ_API_KEY,
+                model=GROQ_MODEL
             )
             
             # Тестовый перевод
-            test = translator.translate("Hello world", "English", "Russian")
-            logger.info(f"✅ Qwen Translator инициализирован")
-            logger.info(f"🤖 Модель: {QWEN_MODEL}")
-            logger.info(f"🧪 Тест: 'Hello world' → '{test}'")
+            test = translator.translate("Tesla unveiled new Model S with 500 miles range", "English", "Russian")
+            logger.info(f"✅ Groq Translator инициализирован")
+            logger.info(f"🤖 Модель: {GROQ_MODEL}")
+            logger.info(f"🧪 Тест перевода:")
+            logger.info(f"   EN: 'Tesla unveiled new Model S with 500 miles range'")
+            logger.info(f"   RU: '{test}'")
             
         except Exception as e:
-            logger.error(f"❌ Ошибка инициализации Qwen: {e}")
+            logger.error(f"❌ Ошибка инициализации Groq: {e}")
             translator = None
             ENABLE_TRANSLATION = False
     else:
-        logger.warning("⚠️ QWEN_API_KEY не установлен. Перевод отключён.")
+        logger.warning("⚠️ GROQ_API_KEY не установлен. Перевод отключён.")
         ENABLE_TRANSLATION = False
 else:
     logger.info("Перевод отключён")
@@ -195,63 +295,12 @@ else:
 # ============================================
 
 RSS_FEEDS = [
-    # 🇷 РОССИЙСКИЕ ИСТОЧНИКИ (на русском, не переводим)
-    {
-        'name': 'Авто.ру Журнал',
-        'url': 'https://auto.ru/journal/export/rss/all.xml',
-        'lang': 'ru',
-        'region': '🇷',
-        'priority': 'high',
-        'weight': 2
-    },
-    {
-        'name': 'Автостат',
-        'url': 'https://www.autostat.ru/feed/',
-        'lang': 'ru',
-        'region': '🇷',
-        'priority': 'medium',
-        'weight': 1.5
-    },
-    {
-        'name': 'F1-News.ru',
-        'url': 'https://www.f1news.ru/rss/',
-        'lang': 'ru',
-        'region': '🌍',
-        'priority': 'high',
-        'category': 'motorsport',
-        'weight': 2
-    },
-    {
-        'name': 'Колёса.ру',
-        'url': 'https://www.kolesa.ru/news/rss/',
-        'lang': 'ru',
-        'region': '🇷🇺',
-        'priority': 'high',
-        'weight': 2
-    },
-    {
-        'name': 'Motor.ru',
-        'url': 'https://motor.ru/rss/',
-        'lang': 'ru',
-        'region': '🇷🇺',
-        'priority': 'high',
-        'weight': 2
-    },
-    {
-        'name': 'РГ (Авто)',
-        'url': 'https://rg.ru/rss/auto.xml',
-        'lang': 'ru',
-        'region': '🇷',
-        'priority': 'medium',
-        'weight': 1.5
-    },
-    
-    # 🇬🇧 БРИТАНСКИЕ ИСТОЧНИКИ
+    # 🇬🇧 БРИТАНСКИЕ (РАБОЧИЕ)
     {
         'name': 'Autocar UK',
         'url': 'https://www.autocar.co.uk/rss',
         'lang': 'en',
-        'region': '🇬',
+        'region': '🇬🇧',
         'priority': 'high',
         'weight': 1.5
     },
@@ -259,20 +308,20 @@ RSS_FEEDS = [
         'name': 'Auto Express',
         'url': 'https://www.autoexpress.co.uk/rss',
         'lang': 'en',
-        'region': '🇬',
+        'region': '🇬🇧',
         'priority': 'medium',
         'weight': 1
     },
     {
-        'name': 'Top Gear',
-        'url': 'https://www.topgear.com/rss',
+        'name': 'Evo Magazine',
+        'url': 'https://www.evo.co.uk/rss',
         'lang': 'en',
         'region': '🇬🇧',
-        'priority': 'high',
-        'weight': 2
+        'priority': 'medium',
+        'weight': 1
     },
     
-    # 🇺🇸 АМЕРИКАНСКИЕ ИСТОЧНИКИ
+    # 🇺🇸 АМЕРИКАНСКИЕ (РАБОЧИЕ)
     {
         'name': 'Car and Driver',
         'url': 'https://www.caranddriver.com/rss/all.xml/',
@@ -285,17 +334,9 @@ RSS_FEEDS = [
         'name': 'Motor1',
         'url': 'https://www.motor1.com/rss/news/all/',
         'lang': 'en',
-        'region': '🇺',
+        'region': '🇺🇸',
         'priority': 'high',
         'weight': 1.5
-    },
-    {
-        'name': 'AutoBlog',
-        'url': 'https://www.autoblog.com/rss.xml',
-        'lang': 'en',
-        'region': '🇺🇸',
-        'priority': 'medium',
-        'weight': 1
     },
     {
         'name': 'Road & Track',
@@ -314,45 +355,7 @@ RSS_FEEDS = [
         'weight': 1.5
     },
     
-    # 🇩 НЕМЕЦКИЕ ИСТОЧНИКИ
-    {
-        'name': 'Auto Bild',
-        'url': 'https://www.autobild.de/rss/rss.xml',
-        'lang': 'de',
-        'region': '🇩🇪',
-        'priority': 'high',
-        'weight': 1.5
-    },
-    {
-        'name': 'Auto Motor Sport',
-        'url': 'https://www.auto-motor-und-sport.de/rss/',
-        'lang': 'de',
-        'region': '🇩🇪',
-        'priority': 'high',
-        'weight': 1.5
-    },
-    
-    # 🇯🇵 ЯПОНСКИЕ ИСТОЧНИКИ
-    {
-        'name': 'Best Car Web',
-        'url': 'https://www.bestcarweb.jp/rss',
-        'lang': 'ja',
-        'region': '🇯🇵',
-        'priority': 'high',
-        'weight': 2
-    },
-    
-    # 🇨 КИТАЙСКИЕ ИСТОЧНИКИ
-    {
-        'name': 'Gasgoo',
-        'url': 'https://autonews.gasgoo.com/rss',
-        'lang': 'en',
-        'region': '🇨',
-        'priority': 'high',
-        'weight': 2
-    },
-    
-    # 🌍 МЕЖДУНАРОДНЫЕ (ЭЛЕКТРОМОБИЛИ)
+    # 🌍 ЭЛЕКТРОМОБИЛИ (РАБОЧИЕ)
     {
         'name': 'Electrek',
         'url': 'https://electrek.co/feed/',
@@ -380,17 +383,8 @@ RSS_FEEDS = [
         'category': 'electric',
         'weight': 2
     },
-    {
-        'name': 'InsideEVs',
-        'url': 'https://insideevs.com/rss/all/',
-        'lang': 'en',
-        'region': '🌍',
-        'priority': 'high',
-        'category': 'electric',
-        'weight': 2
-    },
     
-    # 🏁 АВТОСПОРТ
+    # 🏁 АВТОСПОРТ (РАБОЧИЕ)
     {
         'name': 'Autosport',
         'url': 'https://www.autosport.com/rss/feed/all',
@@ -402,7 +396,7 @@ RSS_FEEDS = [
     },
     {
         'name': 'Planet F1',
-        'url': 'https://www.planetf1.com/rss',
+        'url': 'https://www.planetf1.com/feed/',
         'lang': 'en',
         'region': '🌍',
         'priority': 'high',
@@ -419,7 +413,7 @@ RSS_FEEDS = [
         'weight': 1.5
     },
     
-    # 💎 ЛЮКС И СУПЕРКАРЫ
+    # 💎 ЛЮКС (РАБОЧИЕ)
     {
         'name': 'Supercar Blondie',
         'url': 'https://supercarblondie.com/feed/',
@@ -428,6 +422,32 @@ RSS_FEEDS = [
         'priority': 'high',
         'category': 'luxury',
         'weight': 2
+    },
+    
+    # 📰 НОВОСТНЫЕ АГЕНТСТВА (РАБОЧИЕ)
+    {
+        'name': 'Reuters Auto',
+        'url': 'https://www.reuters.com/technology/autos-transportation/rss',
+        'lang': 'en',
+        'region': '🌍',
+        'priority': 'high',
+        'weight': 1.5
+    },
+    {
+        'name': 'CNBC Autos',
+        'url': 'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=15837362',
+        'lang': 'en',
+        'region': '🇺🇸',
+        'priority': 'high',
+        'weight': 1.5
+    },
+    {
+        'name': 'BBC Autos',
+        'url': 'https://www.topgear.com/rss',
+        'lang': 'en',
+        'region': '🇬🇧',
+        'priority': 'medium',
+        'weight': 1
     },
 ]
 # ============================================
