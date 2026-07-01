@@ -24,9 +24,9 @@ BOT_TOKEN = os.environ.get('BOT_TOKEN')
 CHANNEL_ID = os.environ.get('CHANNEL_ID')
 
 # Яндекс Cloud credentials
-YC_FOLDER_ID = os.environ.get('YC_FOLDER_ID')  # ID каталога
-YC_SERVICE_ACCOUNT_ID = os.environ.get('YC_SERVICE_ACCOUNT_ID')  # ID сервисного аккаунта
-YC_PRIVATE_KEY = os.environ.get('YC_PRIVATE_KEY')  # Приватный ключ (в формате PEM)
+YC_FOLDER_ID = os.environ.get('cloud-sea-of-fish  default')  # ID каталога
+YC_SERVICE_ACCOUNT_ID = os.environ.get('ajejg7gd4t76ba1njb8u')  # ID сервисного аккаунта
+YC_PRIVATE_KEY = os.environ.get('YCPdHvTl5a2IvhEmlpKXoqpJseNmdT3G_W8ZP827')  # Приватный ключ (в формате PEM)
 
 CHECK_INTERVAL = int(os.environ.get('CHECK_INTERVAL', 1800))
 NEWS_PER_SOURCE = int(os.environ.get('NEWS_PER_SOURCE', 3))
