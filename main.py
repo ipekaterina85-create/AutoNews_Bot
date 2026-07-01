@@ -20,13 +20,17 @@ from telebot import apihelper
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 CHANNEL_ID = os.environ.get('CHANNEL_ID')
 
+# Яндекс Cloud credentials (упрощённая версия)
+YANDEX_API_KEY = os.environ.get('YANDEX_API_KEY')
+YC_FOLDER_ID = os.environ.get('YC_FOLDER_ID')
+
 CHECK_INTERVAL = int(os.environ.get('CHECK_INTERVAL', 1800))
-NEWS_PER_SOURCE = int(os.environ.get('NEWS_PER_SOURCE', 5))  # Увеличили до 5
+NEWS_PER_SOURCE = int(os.environ.get('NEWS_PER_SOURCE', 5))
 MAX_DESCRIPTION_LENGTH = int(os.environ.get('MAX_DESCRIPTION_LENGTH', 600))
-ENABLE_TRANSLATION = os.environ.get('ENABLE_TRANSLATION', 'false').lower() == 'true'
+ENABLE_TRANSLATION = os.environ.get('ENABLE_TRANSLATION', 'true').lower() == 'true'
 ENABLE_IMAGES = os.environ.get('ENABLE_IMAGES', 'true').lower() == 'true'
 ENABLE_HASHTAGS = os.environ.get('ENABLE_HASHTAGS', 'true').lower() == 'true'
-MIN_SCORE = int(os.environ.get('MIN_SCORE', 3))  # Минимальный рейтинг для публикации
+MIN_SCORE = int(os.environ.get('MIN_SCORE', 3))
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
 
 if not BOT_TOKEN:
@@ -63,7 +67,81 @@ if PROXY_URL:
     logger.info(f"Используется прокси: {PROXY_URL}")
 
 # ============================================
-# РАСШИРЕННЫЙ СПИСОК ИСТОЧНИКОВ (20+)
+# ЯНДЕКС TRANSLATE API (УПРОЩЁННАЯ ВЕРСИЯ)
+# ============================================
+
+class YandexTranslator:
+    """Простой класс для работы с Яндекс Translate API"""
+    
+    def __init__(self, api_key, folder_id):
+        self.api_key = api_key
+        self.folder_id = folder_id
+        self.translate_url = "https://translate.api.cloud.yandex.net/translate/v2/translate"
+        
+    def translate(self, text, source_lang='en', target_lang='ru'):
+        """Перевод текста"""
+        if not text or len(text.strip()) == 0:
+            return ""
+        
+        try:
+            if len(text) > 9500:
+                text = text[:9500]
+            
+            headers = {
+                'Authorization': f'Api-Key {self.api_key}',
+                'Content-Type': 'application/json'
+            }
+            
+            data = {
+                'folderId': self.folder_id,
+                'texts': [text],
+                'sourceLanguageCode': source_lang,
+                'targetLanguageCode': target_lang
+            }
+            
+            response = requests.post(
+                self.translate_url,
+                headers=headers,
+                json=data,
+                timeout=15
+            )
+            response.raise_for_status()
+            
+            result = response.json()
+            if 'translations' in result and len(result['translations']) > 0:
+                return result['translations'][0]['text']
+            
+            return text
+            
+        except Exception as e:
+            logger.warning(f"Ошибка перевода Яндекс: {e}")
+            return text
+
+# Инициализация переводчика
+if ENABLE_TRANSLATION:
+    try:
+        if not YANDEX_API_KEY or not YC_FOLDER_ID:
+            raise ValueError(
+                "❌ Не настроены переменные Яндекс Cloud! "
+                "Нужны: YANDEX_API_KEY, YC_FOLDER_ID"
+            )
+        
+        translator = YandexTranslator(YANDEX_API_KEY, YC_FOLDER_ID)
+        
+        # Проверяем работоспособность
+        test_translation = translator.translate("Hello world", "en", "ru")
+        logger.info(f"✅ Яндекс Translate инициализирован. Тест: 'Hello world' → '{test_translation}'")
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка инициализации Яндекс Translate: {e}")
+        translator = None
+        ENABLE_TRANSLATION = False
+else:
+    translator = None
+    logger.info("Перевод отключён")
+
+# ============================================
+# РАСШИРЕННЫЙ СПИСОК ИСТОЧНИКОВ
 # ============================================
 
 RSS_FEEDS = [
@@ -72,7 +150,7 @@ RSS_FEEDS = [
         'name': 'Авторевю',
         'url': 'https://autoreview.ru/feed/',
         'lang': 'ru',
-        'region': '🇷🇺',
+        'region': '🇷',
         'priority': 'high',
         'weight': 2
     },
@@ -80,7 +158,7 @@ RSS_FEEDS = [
         'name': 'За рулём',
         'url': 'https://www.zr.ru/rss/news/',
         'lang': 'ru',
-        'region': '🇷🇺',
+        'region': '🇷',
         'priority': 'high',
         'weight': 2
     },
@@ -91,14 +169,6 @@ RSS_FEEDS = [
         'region': '🇷🇺',
         'priority': 'high',
         'weight': 2
-    },
-    {
-        'name': 'Авто.ру Журнал',
-        'url': 'https://journal.auto.ru/feed/',
-        'lang': 'ru',
-        'region': '🇷🇺',
-        'priority': 'medium',
-        'weight': 1.5
     },
     
     # 🇬🇧 Британские источники
@@ -118,27 +188,11 @@ RSS_FEEDS = [
         'priority': 'high',
         'weight': 2
     },
-    {
-        'name': 'Auto Express',
-        'url': 'https://www.autoexpress.co.uk/rss',
-        'lang': 'en',
-        'region': '🇬🇧',
-        'priority': 'medium',
-        'weight': 1
-    },
     
     # 🇺🇸 Американские источники
     {
         'name': 'Car and Driver',
         'url': 'https://www.caranddriver.com/rss/all.xml/',
-        'lang': 'en',
-        'region': '🇺🇸',
-        'priority': 'high',
-        'weight': 1.5
-    },
-    {
-        'name': 'Road & Track',
-        'url': 'https://www.roadandtrack.com/rss/all.xml/',
         'lang': 'en',
         'region': '🇺🇸',
         'priority': 'high',
@@ -151,22 +205,6 @@ RSS_FEEDS = [
         'region': '🇺🇸',
         'priority': 'high',
         'weight': 1.5
-    },
-    {
-        'name': 'AutoBlog',
-        'url': 'https://www.autoblog.com/rss.xml',
-        'lang': 'en',
-        'region': '🇺🇸',
-        'priority': 'medium',
-        'weight': 1
-    },
-    {
-        'name': 'Motor1',
-        'url': 'https://www.motor1.com/rss/news/all/',
-        'lang': 'en',
-        'region': '🇺🇸',
-        'priority': 'medium',
-        'weight': 1
     },
     
     # 🌍 Международные
@@ -211,73 +249,37 @@ RSS_FEEDS = [
 ]
 
 # ============================================
-# СИСТЕМА РЕЙТИНГА НОВОСТЕЙ
+# СИСТЕМА РЕЙТИНГА
 # ============================================
 
-# Ключевые слова для оценки интересности (вес слова)
 HOT_KEYWORDS = {
-    # Топ-бренды (высокий интерес)
     'tesla': 3, 'bugatti': 3, 'ferrari': 3, 'lamborghini': 3, 'porsche': 2,
-    'rolls-royce': 3, 'mclaren': 2, 'pagani': 3, 'koenigsegg': 3,
-    
-    # Электромобили и инновации
     'electric': 2, 'ev': 2, 'autonomous': 3, 'self-driving': 3, 'autopilot': 3,
-    'battery': 2, 'charging': 2, 'hydrogen': 2, 'innovation': 2, 'revolutionary': 3,
-    
-    # Премьеры и релизы
-    'unveiled': 2, 'revealed': 2, 'launch': 2, 'debut': 2, 'premiere': 2,
-    'new model': 2, 'concept': 2, 'prototype': 2, 'first look': 2,
-    
-    # Автоспорт
-    'f1': 2, 'formula 1': 2, 'wrc': 2, 'le mans': 2, 'nascar': 2,
-    'championship': 2, 'victory': 2, 'record': 2, 'race': 1,
-    
-    # Скандалы и проблемы
-    'recall': 2, 'crash': 2, 'accident': 2, 'lawsuit': 2, 'bankrupt': 3,
-    'scandal': 3, 'controversy': 2, 'investigation': 2, 'fine': 2,
-    
-    # Цифры и статистика (обычно интересные)
-    'million': 2, 'billion': 2, 'percent': 1, '%': 1,
-    'fastest': 2, 'cheapest': 2, 'most expensive': 3, 'best-selling': 2,
-    
-    # Российские бренды и события
-    'lada': 2, 'ваз': 2, 'aurus': 3, 'камаз': 2, 'уаз': 2,
-    'москва': 1, 'россия': 1,
+    'unveiled': 2, 'revealed': 2, 'launch': 2, 'debut': 2,
+    'f1': 2, 'formula 1': 2, 'wrc': 2, 'championship': 2,
+    'recall': 2, 'crash': 2, 'accident': 2,
+    'million': 2, 'billion': 2, 'fastest': 2, 'best-selling': 2,
 }
 
-# Категории для рубрик
 CATEGORIES = {
     'electric': {
-        'keywords': ['tesla', 'electric', 'ev', 'battery', 'charging', 'электро', 'гибрид'],
+        'keywords': ['tesla', 'electric', 'ev', 'battery', 'charging', 'электро'],
         'emoji': '⚡',
         'name': 'Электрокары'
     },
     'motorsport': {
-        'keywords': ['f1', 'formula', 'race', 'racing', 'wrc', 'гонк', 'чемпионат'],
+        'keywords': ['f1', 'formula', 'race', 'racing', 'wrc', 'гонк'],
         'emoji': '🏁',
         'name': 'Автоспорт'
     },
     'luxury': {
-        'keywords': ['luxury', 'premium', 'rolls-royce', 'bentley', 'ferrari', 'lamborghini'],
+        'keywords': ['luxury', 'premium', 'rolls-royce', 'bentley', 'ferrari'],
         'emoji': '💎',
         'name': 'Люкс'
-    },
-    'innovation': {
-        'keywords': ['autonomous', 'self-driving', 'ai', 'innovation', 'technology', 'инноваци'],
-        'emoji': '🚀',
-        'name': 'Инновации'
-    },
-    'russia': {
-        'keywords': ['lada', 'ваз', 'aurus', 'россия', 'russia', 'москов'],
-        'emoji': '🇷🇺',
-        'name': 'Россия'
     },
 }
 
 def calculate_news_score(entry, feed_info):
-    """
-    Рассчитывает рейтинг новости (0-10)
-    """
     title = entry.get('title', '').lower()
     summary = entry.get('summary', '').lower()
     text = f"{title} {summary}"
@@ -285,42 +287,31 @@ def calculate_news_score(entry, feed_info):
     score = 0
     matched_keywords = []
     
-    # 1. Проверка по ключевым словам
     for keyword, weight in HOT_KEYWORDS.items():
         if keyword in text:
             score += weight
             matched_keywords.append(keyword)
     
-    # 2. Бонус за приоритет источника
     if feed_info.get('priority') == 'high':
         score += 1
     
-    # 3. Бонус за вес источника
     score += feed_info.get('weight', 1) * 0.5
     
-    # 4. Бонус за наличие изображения
     if get_image_url(entry):
-        score += 0.5
-    
-    # 5. Бонус за длину заголовка (не слишком короткий)
-    if 20 < len(title) < 100:
         score += 0.5
     
     return round(score, 2), matched_keywords
 
 def get_news_category(entry, feed_info):
-    """Определяет категорию новости"""
     title = entry.get('title', '').lower()
     summary = entry.get('summary', '').lower()
     text = f"{title} {summary}"
     
-    # Проверяем категории
     for cat_id, cat_info in CATEGORIES.items():
         for keyword in cat_info['keywords']:
             if keyword in text:
                 return cat_id, cat_info
     
-    # Категория из источника
     if 'category' in feed_info:
         cat_id = feed_info['category']
         if cat_id in CATEGORIES:
@@ -373,6 +364,18 @@ def get_news_id(entry):
     unique_str = f"{entry.get('title', '')}{entry.get('link', '')}"
     return hashlib.md5(unique_str.encode('utf-8')).hexdigest()
 
+def translate_text(text, source_lang='en'):
+    if not ENABLE_TRANSLATION or not translator:
+        return text
+    if not text or len(text.strip()) == 0:
+        return ""
+    
+    try:
+        return translator.translate(text, source_lang, 'ru')
+    except Exception as e:
+        logger.warning(f"Ошибка перевода: {e}")
+        return text
+
 def clean_html(text):
     if not text:
         return ""
@@ -415,12 +418,10 @@ def generate_hashtags(entry, feed_info):
     text = f"{title} {summary}"
     tags = ['#автоновости']
     
-    # Категория
     cat_id, cat_info = get_news_category(entry, feed_info)
     if cat_id != 'general':
         tags.append(f"#{cat_id}")
     
-    # Регион
     region = feed_info.get('region', '')
     if '🇷🇺' in region:
         tags.append('#россия')
@@ -428,33 +429,33 @@ def generate_hashtags(entry, feed_info):
         tags.append('#сша')
     elif '🇬🇧' in region:
         tags.append('#европа')
-    elif '🇩🇪' in region:
-        tags.append('#германия')
     
-    # Бренды
     brands = {
         'tesla': '#tesla', 'toyota': '#toyota', 'bmw': '#bmw', 
         'mercedes': '#mercedes', 'audi': '#audi', 'volkswagen': '#vw',
         'porsche': '#porsche', 'ferrari': '#ferrari', 'lamborghini': '#lamborghini',
         'ford': '#ford', 'honda': '#honda', 'nissan': '#nissan',
-        'hyundai': '#hyundai', 'kia': '#kia', 'lada': '#лада',
-        'bugatti': '#bugatti', 'mclaren': '#mclaren'
+        'hyundai': '#hyundai', 'kia': '#kia'
     }
     
     for brand, tag in brands.items():
         if brand in text:
             tags.append(tag)
     
-    return ' '.join(tags[:5])  # Максимум 5 хештегов
+    return ' '.join(tags[:5])
 
 def format_message(entry, feed_info, score, category):
-    """Улучшенное форматирование сообщения"""
     original_title = entry.get('title', 'Без названия')
     link = entry.get('link', '')
     original_summary = entry.get('summary', '')
     
-    translated_title = original_title
-    translated_summary = original_summary
+    # Перевод через Яндекс
+    if ENABLE_TRANSLATION and translator:
+        translated_title = translate_text(original_title, feed_info.get('lang', 'en'))
+        translated_summary = translate_text(original_summary, feed_info.get('lang', 'en'))
+    else:
+        translated_title = original_title
+        translated_summary = original_summary
     
     translated_summary = clean_html(translated_summary)
     
@@ -466,41 +467,33 @@ def format_message(entry, feed_info, score, category):
     cat_emoji = category['emoji']
     cat_name = category['name']
     
-    # Определяем уровень "горячести"
     if score >= 7:
         hot_indicator = "🔥🔥🔥 *ГОРЯЧАЯ НОВОСТЬ*"
     elif score >= 5:
-        hot_indicator = "🔥🔥 *ТОП*"
+        hot_indicator = "🔥 *ТОП*"
     elif score >= 3:
         hot_indicator = "🔥 *ИНТЕРЕСНО*"
     else:
         hot_indicator = ""
     
-    # Формируем сообщение
     message = ""
     
-    # Заголовок с индикатором
     if hot_indicator:
         message += f"{hot_indicator}\n\n"
     
     message += f"{cat_emoji} *{translated_title}*\n\n"
     
-    # Описание
     if translated_summary:
         message += f"{translated_summary}\n\n"
     
-    # Разделитель
     message += "━━━━━━━━━━━━━━━━━━━\n"
     
-    # Метаданные
     message += f"📊 *Рейтинг:* {score}/10\n"
     message += f"📰 *Источник:* {source_name} {region}\n"
     message += f"🏷️ *Категория:* {cat_name}\n"
     
-    # Ссылка
     message += f"\n🔗 [Читать полностью]({link})\n\n"
     
-    # Хештеги
     hashtags = generate_hashtags(entry, feed_info)
     if hashtags:
         message += f"{hashtags}"
@@ -538,7 +531,6 @@ def fetch_and_publish():
     error_count = 0
     skipped_count = 0
     
-    # Собираем все новости с рейтингом
     all_news = []
     
     logger.info(f"Начинаем проверку {len(RSS_FEEDS)} источников новостей...")
@@ -562,11 +554,9 @@ def fetch_and_publish():
                 if news_id in published:
                     continue
                 
-                # Рассчитываем рейтинг
                 score, keywords = calculate_news_score(entry, feed_info)
                 category_id, category_info = get_news_category(entry, feed_info)
                 
-                # Добавляем в список
                 all_news.append({
                     'entry': entry,
                     'feed_info': feed_info,
@@ -581,12 +571,10 @@ def fetch_and_publish():
             error_count += 1
             continue
     
-    # Сортируем по рейтингу (от высокого к низкому)
     all_news.sort(key=lambda x: x['score'], reverse=True)
     
     logger.info(f"Собрано {len(all_news)} новостей")
     
-    # Публикуем только новости с рейтингом >= MIN_SCORE
     for news_data in all_news:
         if news_data['score'] < MIN_SCORE:
             skipped_count += 1
@@ -609,7 +597,7 @@ def fetch_and_publish():
         else:
             error_count += 1
     
-    logger.info(f"Цикл завершён. Опубликовано: {new_count}, Пропущено (низкий рейтинг): {skipped_count}, Ошибок: {error_count}")
+    logger.info(f"Цикл завершён. Опубликовано: {new_count}, Пропущено: {skipped_count}, Ошибок: {error_count}")
     return new_count, error_count
 
 def send_startup_message():
@@ -619,6 +607,7 @@ def send_startup_message():
             f"📊 Источников: {len(RSS_FEEDS)}\n"
             f"⏱️ Интервал проверки: {CHECK_INTERVAL // 60} минут\n"
             f"📈 Минимальный рейтинг: {MIN_SCORE}/10\n"
+            f"🌐 Перевод: {'✅ Яндекс' if ENABLE_TRANSLATION else '❌'}\n"
             f"🖼️ Изображения: {'✅' if ENABLE_IMAGES else '❌'}\n"
             f"🏷️ Хештеги: {'✅' if ENABLE_HASHTAGS else '❌'}\n\n"
             f"🕐 Время запуска: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
