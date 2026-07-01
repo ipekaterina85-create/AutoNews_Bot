@@ -415,14 +415,14 @@ else:
 # ============================================
 
 RSS_FEEDS = [
-    # 🇷🇺 РОССИЙСКИЕ ИСТОЧНИКИ (на русском, не переводим)
+        # 🇷🇺 РОССИЙСКИЕ ИСТОЧНИКИ (пониженный приоритет для баланса 1 из 6-7)
     {
         'name': 'За рулём',
         'url': 'https://www.zr.ru/rss/',
         'lang': 'ru',
         'region': '🇷🇺',
-        'priority': 'high',
-        'weight': 2.5,
+        'priority': 'medium',  # Было 'high'
+        'weight': 1.5,         # Было 2.5
         'category': 'russia'
     },
     {
@@ -430,8 +430,8 @@ RSS_FEEDS = [
         'url': 'https://www.kolesa.ru/news/rss/',
         'lang': 'ru',
         'region': '🇷🇺',
-        'priority': 'high',
-        'weight': 2.5,
+        'priority': 'medium',
+        'weight': 1.5,
         'category': 'russia'
     },
     {
@@ -439,8 +439,8 @@ RSS_FEEDS = [
         'url': 'https://www.drom.ru/info/rss/',
         'lang': 'ru',
         'region': '🇷🇺',
-        'priority': 'high',
-        'weight': 2.5,
+        'priority': 'medium',
+        'weight': 1.5,
         'category': 'russia'
     },
     {
@@ -448,8 +448,8 @@ RSS_FEEDS = [
         'url': 'https://auto.ru/journal/export/rss/all.xml',
         'lang': 'ru',
         'region': '🇷🇺',
-        'priority': 'high',
-        'weight': 2.5,
+        'priority': 'medium',
+        'weight': 1.5,
         'category': 'russia'
     },
     {
@@ -457,8 +457,8 @@ RSS_FEEDS = [
         'url': 'https://www.autostat.ru/feed/',
         'lang': 'ru',
         'region': '🇷🇺',
-        'priority': 'medium',
-        'weight': 2,
+        'priority': 'low',     # Было 'medium'
+        'weight': 1.0,         # Было 2
         'category': 'russia'
     },
     {
@@ -466,8 +466,8 @@ RSS_FEEDS = [
         'url': 'https://www.f1news.ru/rss/',
         'lang': 'ru',
         'region': '🇷🇺',
-        'priority': 'high',
-        'weight': 2,
+        'priority': 'medium',
+        'weight': 1.5,
         'category': 'motorsport'
     },
     {
@@ -475,17 +475,17 @@ RSS_FEEDS = [
         'url': 'https://tass.com/rss/v2.xml',
         'lang': 'ru',
         'region': '🇷🇺',
-        'priority': 'high',
-        'weight': 2,
+        'priority': 'medium',
+        'weight': 1.5,
         'category': 'russia'
     },
     {
         'name': 'РИА Новости (Авто)',
         'url': 'https://ria.ru/export/atom/auto.xml',
         'lang': 'ru',
-        'region': '🇷🇺',
-        'priority': 'high',
-        'weight': 2,
+        'region': '🇷',
+        'priority': 'medium',
+        'weight': 1.5,
         'category': 'russia'
     },
     
@@ -728,6 +728,8 @@ def calculate_news_score(entry, feed_info):
     
     if feed_info.get('priority') == 'high':
         score += 1
+    elif feed_info.get('priority') == 'medium':
+        score += 0.5  # Было +1 для high, теперь +0.5 для medium
     
     score += feed_info.get('weight', 1) * 0.5
     
@@ -736,6 +738,11 @@ def calculate_news_score(entry, feed_info):
     
     if 20 < len(entry.get('title', '')) < 100:
         score += 0.5
+    
+    # 🇺 КОРРЕКТИРОВКА: понижаем рейтинг российских новостей на 30%
+    # чтобы они составляли ~15-17% от публикаций (1 из 6-7)
+    if feed_info.get('lang') == 'ru':
+        score *= 0.7
     
     return round(score, 2), matched_keywords
 
