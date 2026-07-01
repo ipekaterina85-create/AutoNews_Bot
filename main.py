@@ -10,7 +10,7 @@ from pathlib import Path
 
 import feedparser
 import requests
-from telebot import TeleBot, types
+from telebot import TeleBot
 from telebot import apihelper
 
 # ============================================
@@ -20,10 +20,6 @@ from telebot import apihelper
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 CHANNEL_ID = os.environ.get('CHANNEL_ID')
 
-# Яндекс Cloud credentials (упрощённая версия)
-YANDEX_API_KEY = os.environ.get('YANDEX_API_KEY')
-YC_FOLDER_ID = os.environ.get('YC_FOLDER_ID')
-
 CHECK_INTERVAL = int(os.environ.get('CHECK_INTERVAL', 1800))
 NEWS_PER_SOURCE = int(os.environ.get('NEWS_PER_SOURCE', 5))
 MAX_DESCRIPTION_LENGTH = int(os.environ.get('MAX_DESCRIPTION_LENGTH', 600))
@@ -32,6 +28,9 @@ ENABLE_IMAGES = os.environ.get('ENABLE_IMAGES', 'true').lower() == 'true'
 ENABLE_HASHTAGS = os.environ.get('ENABLE_HASHTAGS', 'true').lower() == 'true'
 MIN_SCORE = int(os.environ.get('MIN_SCORE', 3))
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
+
+# Email для MyMemory (увеличивает лимит с 5000 до 50000 символов/день)
+MYMEMORY_EMAIL = os.environ.get('MYMEMORY_EMAIL', '')
 
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN не установлен!")
@@ -55,76 +54,203 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ============================================
-# ИНИЦИАЛИЗАЦИЯ
+# ИНИЦИАЛИЗАЦИЯ БОТА
 # ============================================
 
 bot = TeleBot(BOT_TOKEN)
 apihelper.ENABLE_MIDDLEWARE = True
 
-PROXY_URL = os.environ.get('PROXY_URL')
-if PROXY_URL:
-    apihelper.proxy = {'https': PROXY_URL}
-    logger.info(f"Используется прокси: {PROXY_URL}")
+# ============================================
+# MYMEMORY ПЕРЕВОДЧИК (БЕСПЛАТНО, БЕЗ КАРТ, БЕЗ API-КЛЮЧЕЙ)
+# ============================================
 
-class LibreTranslate:
-    """Открытый переводчик"""
+class MyMemoryTranslator:
+    """
+    Бесплатный переводчик MyMemory
+    - Без регистрации
+    - Без API-ключей
+    - Без карт
+    - Лимит: 5000 символов/день (без email) или 50000 (с email)
+    """
     
-    def __init__(self):
-        self.url = "https://libretranslate.com/translate"
-    
+    def __init__(self, email=''):
+        self.translate_url = "https://api.mymemory.translated.net/get"
+        self.email = email
+        self.last_call_time = 0
+        self.min_interval = 1.5  # 1.5 сек между запросами
+        self.daily_chars_used = 0
+        self.daily_limit = 50000 if email else 5000
+        
     def translate(self, text, source_lang='en', target_lang='ru'):
-        if not text or self._is_russian(text):
+        """Перевод текста"""
+        if not text or len(text.strip()) == 0:
+            return ""
+        
+        # Если текст уже на русском — не переводим
+        if self._is_russian(text):
+            return text
+        
+        # Проверка дневного лимита
+        if self.daily_chars_used + len(text) > self.daily_limit:
+            logger.warning(f"⚠️ Дневной лимит MyMemory исчерпан ({self.daily_limit} символов)")
             return text
         
         try:
-            data = {
-                'q': text,
-                'source': source_lang,
-                'target': target_lang,
-                'format': 'text'
-            }
-            response = requests.post(self.url, json=data, timeout=10)
-            return response.json()['translatedText']
-        except:
+            # Защита от частых запросов
+            now = time.time()
+            time_since_last = now - self.last_call_time
+            if time_since_last < self.min_interval:
+                time.sleep(self.min_interval - time_since_last)
+            
+            # MyMemory лимит: 500 символов за запрос
+            if len(text) > 480:
+                parts = self._split_text(text, 480)
+                translated_parts = []
+                for part in parts:
+                    translated_part = self._translate_chunk(part, source_lang, target_lang)
+                    translated_parts.append(translated_part)
+                    time.sleep(0.5)
+                return ' '.join(translated_parts)
+            
+            result = self._translate_chunk(text, source_lang, target_lang)
+            return result
+            
+        except Exception as e:
+            logger.warning(f"Ошибка MyMemory: {e}")
             return text
+    
+    def _translate_chunk(self, text, source_lang, target_lang):
+        """Перевод одного куска текста"""
+        params = {
+            'q': text,
+            'langpair': f'{source_lang}|{target_lang}'
+        }
         
+        # Добавляем email для увеличения лимита
+        if self.email:
+            params['de'] = self.email
+        
+        response = requests.get(
+            self.translate_url,
+            params=params,
+            timeout=15
+        )
+        response.raise_for_status()
+        
+        result = response.json()
+        
+        if 'responseStatus' in result and result['responseStatus'] == 200:
+            if 'responseData' in result and result['responseData']:
+                translated = result['responseData']['translatedText']
+                self.last_call_time = time.time()
+                self.daily_chars_used += len(text)
+                return translated
+        
+        # Если основная база не дала результат — пробуем альтернативные переводы
+        if 'matches' in result and result['matches']:
+            # Берём перевод с наибольшим совпадением
+            best_match = max(result['matches'], key=lambda x: x.get('match', 0))
+            if best_match.get('match', 0) > 0.5:
+                translated = best_match.get('translation', text)
+                self.last_call_time = time.time()
+                self.daily_chars_used += len(text)
+                return translated
+        
+        return text
+    
+    def _split_text(self, text, max_length):
+        """Разбиение текста на части по предложениям"""
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        parts = []
+        current_part = ""
+        
+        for sentence in sentences:
+            if len(current_part) + len(sentence) + 1 <= max_length:
+                current_part = current_part + " " + sentence if current_part else sentence
+            else:
+                if current_part:
+                    parts.append(current_part)
+                current_part = sentence
+        
+        if current_part:
+            parts.append(current_part)
+        
+        return parts if parts else [text[:max_length]]
+    
     def _is_russian(self, text):
+        """Проверка, что текст уже на русском"""
+        if not text:
+            return False
         cyrillic = sum(1 for c in text if 'а' <= c.lower() <= 'я')
         letters = sum(1 for c in text if c.isalpha())
-        return letters > 0 and (cyrillic / letters) > 0.5
+        if letters == 0:
+            return False
+        return (cyrillic / letters) > 0.5
 
 # ============================================
-# РАСШИРЕННЫЙ СПИСОК ИСТОЧНИКОВ
+# ИНИЦИАЛИЗАЦИЯ ПЕРЕВОДЧИКА
+# ============================================
+
+translator = None
+
+if ENABLE_TRANSLATION:
+    try:
+        translator = MyMemoryTranslator(email=MYMEMORY_EMAIL)
+        test = translator.translate("Hello world", "en", "ru")
+        logger.info(f"✅ MyMemory инициализирован. Тест: 'Hello world' → '{test}'")
+        if MYMEMORY_EMAIL:
+            logger.info(f"📧 Email для MyMemory: {MYMEMORY_EMAIL} (лимит 50000 символов/день)")
+        else:
+            logger.info(f"⚠️ Email не указан. Лимит MyMemory: 5000 символов/день")
+            logger.info(f"💡 Добавьте MYMEMORY_EMAIL в Railway для увеличения лимита до 50000")
+    except Exception as e:
+        logger.error(f"❌ Ошибка инициализации MyMemory: {e}")
+        translator = None
+        ENABLE_TRANSLATION = False
+else:
+    logger.info("Перевод отключён")
+
+# ============================================
+# РАБОЧИЕ RSS-ИСТОЧНИКИ (проверенные)
 # ============================================
 
 RSS_FEEDS = [
-    # 🇷🇺 Российские источники
+    # 🇷🇺 Российские (на русском, не переводим)
     {
-        'name': 'Авторевю',
-        'url': 'https://autoreview.ru/feed/',
+        'name': 'Авто.ру Журнал',
+        'url': 'https://auto.ru/journal/export/rss/all.xml',
         'lang': 'ru',
-        'region': '🇷',
+        'region': '🇷🇺',
         'priority': 'high',
         'weight': 2
     },
     {
-        'name': 'За рулём',
-        'url': 'https://www.zr.ru/rss/news/',
+        'name': 'Автостат',
+        'url': 'https://www.autostat.ru/feed/',
         'lang': 'ru',
-        'region': '🇷',
+        'region': '🇷🇺',
+        'priority': 'medium',
+        'weight': 1.5
+    },
+    {
+        'name': 'F1-News.ru',
+        'url': 'https://www.f1news.ru/rss/',
+        'lang': 'ru',
+        'region': '🌍',
         'priority': 'high',
+        'category': 'motorsport',
         'weight': 2
     },
     {
-        'name': 'Драйв',
-        'url': 'https://www.drive.ru/rss/',
+        'name': 'Колёса.ру',
+        'url': 'https://www.kolesa.ru/news/rss/',
         'lang': 'ru',
         'region': '🇷🇺',
         'priority': 'high',
         'weight': 2
     },
     
-    # 🇬🇧 Британские источники
+    # 🇬🇧 Британские
     {
         'name': 'Autocar UK',
         'url': 'https://www.autocar.co.uk/rss',
@@ -134,15 +260,15 @@ RSS_FEEDS = [
         'weight': 1.5
     },
     {
-        'name': 'Top Gear',
-        'url': 'https://www.topgear.com/rss',
+        'name': 'Auto Express',
+        'url': 'https://www.autoexpress.co.uk/rss',
         'lang': 'en',
         'region': '🇬🇧',
-        'priority': 'high',
-        'weight': 2
+        'priority': 'medium',
+        'weight': 1
     },
     
-    # 🇺🇸 Американские источники
+    # 🇺🇸 Американские
     {
         'name': 'Car and Driver',
         'url': 'https://www.caranddriver.com/rss/all.xml/',
@@ -152,18 +278,26 @@ RSS_FEEDS = [
         'weight': 1.5
     },
     {
-        'name': 'The Drive',
-        'url': 'https://www.thedrive.com/rss',
+        'name': 'Motor1',
+        'url': 'https://www.motor1.com/rss/news/all/',
         'lang': 'en',
         'region': '🇺🇸',
         'priority': 'high',
         'weight': 1.5
     },
+    {
+        'name': 'AutoBlog',
+        'url': 'https://www.autoblog.com/rss.xml',
+        'lang': 'en',
+        'region': '🇺🇸',
+        'priority': 'medium',
+        'weight': 1
+    },
     
     # 🌍 Международные
     {
-        'name': 'InsideEVs',
-        'url': 'https://insideevs.com/rss/all/',
+        'name': 'Electrek',
+        'url': 'https://electrek.co/feed/',
         'lang': 'en',
         'region': '🌍',
         'priority': 'high',
@@ -171,8 +305,8 @@ RSS_FEEDS = [
         'weight': 2
     },
     {
-        'name': 'Electrek',
-        'url': 'https://electrek.co/rss/',
+        'name': 'CleanTechnica',
+        'url': 'https://cleantechnica.com/feed/',
         'lang': 'en',
         'region': '🌍',
         'priority': 'high',
@@ -190,15 +324,6 @@ RSS_FEEDS = [
         'category': 'motorsport',
         'weight': 1.5
     },
-    {
-        'name': 'Motorsport',
-        'url': 'https://www.motorsport.com/rss/all/',
-        'lang': 'en',
-        'region': '🌍',
-        'priority': 'medium',
-        'category': 'motorsport',
-        'weight': 1.5
-    },
 ]
 
 # ============================================
@@ -206,33 +331,65 @@ RSS_FEEDS = [
 # ============================================
 
 HOT_KEYWORDS = {
+    # Топ-бренды
     'tesla': 3, 'bugatti': 3, 'ferrari': 3, 'lamborghini': 3, 'porsche': 2,
+    'rolls-royce': 3, 'mclaren': 3, 'pagani': 3, 'koenigsegg': 3,
+    
+    # Электромобили и инновации
     'electric': 2, 'ev': 2, 'autonomous': 3, 'self-driving': 3, 'autopilot': 3,
-    'unveiled': 2, 'revealed': 2, 'launch': 2, 'debut': 2,
-    'f1': 2, 'formula 1': 2, 'wrc': 2, 'championship': 2,
-    'recall': 2, 'crash': 2, 'accident': 2,
-    'million': 2, 'billion': 2, 'fastest': 2, 'best-selling': 2,
+    'battery': 2, 'charging': 2, 'hydrogen': 2, 'revolutionary': 3,
+    
+    # Премьеры
+    'unveiled': 2, 'revealed': 2, 'launch': 2, 'debut': 2, 'premiere': 2,
+    'concept': 2, 'prototype': 2, 'new model': 2,
+    
+    # Автоспорт
+    'f1': 2, 'formula 1': 2, 'wrc': 2, 'le mans': 2, 'championship': 2,
+    'victory': 2, 'record': 2,
+    
+    # Скандалы и проблемы
+    'recall': 2, 'crash': 2, 'accident': 2, 'bankrupt': 3, 'scandal': 3,
+    
+    # Цифры
+    'million': 2, 'billion': 2, 'fastest': 2, 'most expensive': 3,
+    'best-selling': 2,
+    
+    # Русские слова
+    'премьера': 2, 'новый': 1, 'электрич': 2, 'гибрид': 2,
+    'lada': 2, 'ваз': 2, 'aurus': 3, 'камаз': 2, 'уаз': 2,
+    'тесла': 3, 'феррари': 3, 'ламборгини': 3, 'порше': 2,
 }
 
 CATEGORIES = {
     'electric': {
-        'keywords': ['tesla', 'electric', 'ev', 'battery', 'charging', 'электро'],
+        'keywords': ['tesla', 'electric', 'ev', 'battery', 'charging', 'электро', 'гибрид', 'ion', 'ioniq', 'тесла'],
         'emoji': '⚡',
         'name': 'Электрокары'
     },
     'motorsport': {
-        'keywords': ['f1', 'formula', 'race', 'racing', 'wrc', 'гонк'],
+        'keywords': ['f1', 'formula', 'race', 'racing', 'wrc', 'гонк', 'чемпионат'],
         'emoji': '🏁',
         'name': 'Автоспорт'
     },
     'luxury': {
-        'keywords': ['luxury', 'premium', 'rolls-royce', 'bentley', 'ferrari'],
+        'keywords': ['luxury', 'premium', 'rolls-royce', 'bentley', 'ferrari', 'lamborghini', 'mclaren', 'феррари', 'ламборгини'],
         'emoji': '💎',
         'name': 'Люкс'
+    },
+    'innovation': {
+        'keywords': ['autonomous', 'self-driving', 'ai', 'innovation', 'technology', 'инноваци'],
+        'emoji': '🚀',
+        'name': 'Инновации'
+    },
+    'russia': {
+        'keywords': ['lada', 'ваз', 'aurus', 'россия', 'russia', 'москв', 'уаз', 'камаз'],
+        'emoji': '🇷🇺',
+        'name': 'Россия'
     },
 }
 
 def calculate_news_score(entry, feed_info):
+    """Рассчитывает рейтинг новости (0-10+)"""
     title = entry.get('title', '').lower()
     summary = entry.get('summary', '').lower()
     text = f"{title} {summary}"
@@ -253,9 +410,13 @@ def calculate_news_score(entry, feed_info):
     if get_image_url(entry):
         score += 0.5
     
+    if 20 < len(entry.get('title', '')) < 100:
+        score += 0.5
+    
     return round(score, 2), matched_keywords
 
 def get_news_category(entry, feed_info):
+    """Определяет категорию новости"""
     title = entry.get('title', '').lower()
     summary = entry.get('summary', '').lower()
     text = f"{title} {summary}"
@@ -318,11 +479,11 @@ def get_news_id(entry):
     return hashlib.md5(unique_str.encode('utf-8')).hexdigest()
 
 def translate_text(text, source_lang='en'):
+    """Перевод текста"""
     if not ENABLE_TRANSLATION or not translator:
         return text
     if not text or len(text.strip()) == 0:
         return ""
-    
     try:
         return translator.translate(text, source_lang, 'ru')
     except Exception as e:
@@ -388,24 +549,29 @@ def generate_hashtags(entry, feed_info):
         'mercedes': '#mercedes', 'audi': '#audi', 'volkswagen': '#vw',
         'porsche': '#porsche', 'ferrari': '#ferrari', 'lamborghini': '#lamborghini',
         'ford': '#ford', 'honda': '#honda', 'nissan': '#nissan',
-        'hyundai': '#hyundai', 'kia': '#kia'
+        'hyundai': '#hyundai', 'kia': '#kia', 'lada': '#лада',
+        'bugatti': '#bugatti', 'mclaren': '#mclaren', 'rolls-royce': '#rollsroyce'
     }
     
     for brand, tag in brands.items():
         if brand in text:
             tags.append(tag)
+            break
     
     return ' '.join(tags[:5])
 
 def format_message(entry, feed_info, score, category):
+    """Форматирование сообщения для Telegram"""
     original_title = entry.get('title', 'Без названия')
     link = entry.get('link', '')
     original_summary = entry.get('summary', '')
     
-    # Перевод через Яндекс
-    if ENABLE_TRANSLATION and translator:
-        translated_title = translate_text(original_title, feed_info.get('lang', 'en'))
-        translated_summary = translate_text(original_summary, feed_info.get('lang', 'en'))
+    # Переводим только если источник НЕ на русском
+    source_lang = feed_info.get('lang', 'en')
+    
+    if ENABLE_TRANSLATION and translator and source_lang != 'ru':
+        translated_title = translate_text(original_title, source_lang)
+        translated_summary = translate_text(original_summary, source_lang)
     else:
         translated_title = original_title
         translated_summary = original_summary
@@ -420,40 +586,36 @@ def format_message(entry, feed_info, score, category):
     cat_emoji = category['emoji']
     cat_name = category['name']
     
+    # Индикатор "горячести"
     if score >= 7:
-        hot_indicator = "🔥🔥🔥 *ГОРЯЧАЯ НОВОСТЬ*"
+        hot_indicator = "🔥🔥🔥 *ГОРЯЧАЯ НОВОСТЬ*\n\n"
     elif score >= 5:
-        hot_indicator = "🔥 *ТОП*"
+        hot_indicator = "🔥🔥 *ТОП*\n\n"
     elif score >= 3:
-        hot_indicator = "🔥 *ИНТЕРЕСНО*"
+        hot_indicator = "🔥 *ИНТЕРЕСНО*\n\n"
     else:
         hot_indicator = ""
     
-    message = ""
-    
-    if hot_indicator:
-        message += f"{hot_indicator}\n\n"
-    
+    message = hot_indicator
     message += f"{cat_emoji} *{translated_title}*\n\n"
     
     if translated_summary:
         message += f"{translated_summary}\n\n"
     
     message += "━━━━━━━━━━━━━━━━━━━\n"
-    
-    message += f"📊 *Рейтинг:* {score}/10\n"
-    message += f"📰 *Источник:* {source_name} {region}\n"
-    message += f"🏷️ *Категория:* {cat_name}\n"
-    
+    message += f"📊 Рейтинг: {score}/10\n"
+    message += f"📰 Источник: {source_name} {region}\n"
+    message += f"🏷️ Категория: {cat_name}\n"
     message += f"\n🔗 [Читать полностью]({link})\n\n"
     
     hashtags = generate_hashtags(entry, feed_info)
     if hashtags:
-        message += f"{hashtags}"
+        message += hashtags
     
     return message, translated_title
 
 def send_news_to_channel(message, image_url=None):
+    """Отправка новости в канал"""
     try:
         if image_url and ENABLE_IMAGES:
             bot.send_photo(
@@ -486,11 +648,11 @@ def fetch_and_publish():
     
     all_news = []
     
-    logger.info(f"Начинаем проверку {len(RSS_FEEDS)} источников новостей...")
+    logger.info(f"Начинаем проверку {len(RSS_FEEDS)} источников...")
     
     for feed_info in RSS_FEEDS:
         try:
-            logger.info(f"Проверяем источник: {feed_info['name']}")
+            logger.info(f"Проверяем: {feed_info['name']}")
             
             feed = feedparser.parse(
                 feed_info['url'],
@@ -498,7 +660,7 @@ def fetch_and_publish():
             )
             
             if feed.bozo and not feed.entries:
-                logger.warning(f"Ошибка парсинга RSS {feed_info['name']}: {feed.bozo_exception}")
+                logger.warning(f"Ошибка RSS {feed_info['name']}: {feed.bozo_exception}")
                 continue
             
             for entry in feed.entries[:NEWS_PER_SOURCE]:
@@ -520,14 +682,16 @@ def fetch_and_publish():
                 })
                         
         except Exception as e:
-            logger.error(f"Ошибка обработки источника {feed_info['name']}: {e}")
+            logger.error(f"Ошибка {feed_info['name']}: {e}")
             error_count += 1
             continue
     
+    # Сортируем по рейтингу (от высокого к низкому)
     all_news.sort(key=lambda x: x['score'], reverse=True)
     
     logger.info(f"Собрано {len(all_news)} новостей")
     
+    # Публикуем только новости с рейтингом >= MIN_SCORE
     for news_data in all_news:
         if news_data['score'] < MIN_SCORE:
             skipped_count += 1
@@ -545,12 +709,12 @@ def fetch_and_publish():
         if send_news_to_channel(message, image_url):
             save_published(news_id)
             new_count += 1
-            logger.info(f"✅ Опубликована новость (рейтинг {score}): {title[:50]}...")
+            logger.info(f"✅ Опубликована (рейтинг {score}): {title[:50]}...")
             time.sleep(3)
         else:
             error_count += 1
     
-    logger.info(f"Цикл завершён. Опубликовано: {new_count}, Пропущено: {skipped_count}, Ошибок: {error_count}")
+    logger.info(f"Итог: ✅{new_count} | ⏭️{skipped_count} | ❌{error_count}")
     return new_count, error_count
 
 def send_startup_message():
@@ -558,12 +722,12 @@ def send_startup_message():
         startup_message = (
             "🤖 *Auto imPulse News Bot запущен!*\n\n"
             f"📊 Источников: {len(RSS_FEEDS)}\n"
-            f"⏱️ Интервал проверки: {CHECK_INTERVAL // 60} минут\n"
-            f"📈 Минимальный рейтинг: {MIN_SCORE}/10\n"
-            f"🌐 Перевод: {'✅ Яндекс' if ENABLE_TRANSLATION else '❌'}\n"
+            f"⏱️ Интервал: {CHECK_INTERVAL // 60} мин\n"
+            f"📈 Мин. рейтинг: {MIN_SCORE}/10\n"
+            f"🌐 Перевод: {'✅ MyMemory' if ENABLE_TRANSLATION else '❌'}\n"
             f"🖼️ Изображения: {'✅' if ENABLE_IMAGES else '❌'}\n"
             f"🏷️ Хештеги: {'✅' if ENABLE_HASHTAGS else '❌'}\n\n"
-            f"🕐 Время запуска: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
         logger.info("Бот успешно запущен!")
         return True
@@ -580,23 +744,22 @@ signal.signal(signal.SIGINT, graceful_shutdown)
 
 def check_channel_access():
     try:
-        logger.info(f"Проверяем доступ к каналу: {CHANNEL_ID}")
+        logger.info(f"Проверяем канал: {CHANNEL_ID}")
         chat = bot.get_chat(CHANNEL_ID)
-        logger.info(f"✅ Канал найден: {chat.title}")
+        logger.info(f"✅ Канал: {chat.title}")
         
         admins = bot.get_chat_administrators(CHANNEL_ID)
         bot_username = bot.get_me().username
         is_admin = any(admin.user.username == bot_username for admin in admins)
         
         if is_admin:
-            logger.info(f"✅ Бот @{bot_username} является администратором канала")
+            logger.info(f"✅ Бот @{bot_username} — админ канала")
             return True
         else:
-            logger.error(f"❌ Бот @{bot_username} НЕ является администратором канала!")
+            logger.error(f"❌ Бот не админ!")
             return False
-            
     except Exception as e:
-        logger.error(f"❌ Ошибка доступа к каналу: {e}")
+        logger.error(f"❌ Ошибка канала: {e}")
         return False
 
 def main():
@@ -613,10 +776,10 @@ def main():
     while True:
         try:
             new_count, error_count = fetch_and_publish()
-            logger.info(f"Следующая проверка через {CHECK_INTERVAL} секунд ({CHECK_INTERVAL // 60} минут)")
+            logger.info(f"Следующая проверка через {CHECK_INTERVAL // 60} минут")
             time.sleep(CHECK_INTERVAL)
         except KeyboardInterrupt:
-            logger.info("Остановка по Ctrl+C")
+            logger.info("Остановка")
             break
         except Exception as e:
             logger.error(f"Критическая ошибка: {e}", exc_info=True)
