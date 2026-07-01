@@ -28,8 +28,6 @@ ENABLE_IMAGES = os.environ.get('ENABLE_IMAGES', 'true').lower() == 'true'
 ENABLE_HASHTAGS = os.environ.get('ENABLE_HASHTAGS', 'true').lower() == 'true'
 MIN_SCORE = int(os.environ.get('MIN_SCORE', 3))
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
-
-# Email для MyMemory (увеличивает лимит с 5000 до 50000 символов/день)
 MYMEMORY_EMAIL = os.environ.get('MYMEMORY_EMAIL', '')
 
 if not BOT_TOKEN:
@@ -61,11 +59,11 @@ bot = TeleBot(BOT_TOKEN)
 apihelper.ENABLE_MIDDLEWARE = True
 
 # ============================================
-# MYMEMORY + АВТО-ГЛОССАРИЙ (УЛУЧШЕННЫЙ ПЕРЕВОД)
+# MYMEMORY + АВТО-ГЛОССАРИЙ
 # ============================================
 
 class MyMemoryTranslator:
-    """Улучшенный переводчик MyMemory с глоссарием авто-терминов"""
+    """Улучшенный переводчик с глоссарием авто-терминов"""
     
     def __init__(self, email=''):
         self.translate_url = "https://api.mymemory.translated.net/get"
@@ -77,7 +75,7 @@ class MyMemoryTranslator:
         
         # 🚗 ГЛОССАРИЙ АВТОМОБИЛЬНЫХ ТЕРМИНОВ
         self.auto_glossary = {
-            # КРИТИЧЕСКИЕ ИСПРАВЛЕНИЯ (из анализа канала)
+            # Критические исправления
             'самосвал': 'внедорожник',
             'самосвала': 'внедорожника',
             'самосвалу': 'внедорожнику',
@@ -85,17 +83,10 @@ class MyMemoryTranslator:
             'самосвале': 'внедорожнике',
             'самосвалы': 'внедорожники',
             'самосвалов': 'внедорожников',
-            'anti-ev': 'анти-электрического',
-            'Anti-EV': 'анти-электрического',
-            '1-из-1': 'единственный в своём роде',
-            '1-of-1': 'единственный в своём роде',
-            'one-of-one': 'единственный в своём роде',
-            'tags nostalgia': 'отсылает к ностальгии',
-            're-': '',  # Убираем обрезанные слова
+            
             'ледяных': 'бензиновых',
             'ледяной': 'бензиновой',
             'ледяные': 'бензиновые',
-            'ледяные панд': 'бензиновых Panda',
             
             'сломает крышку': 'будет представлен',
             'сломала крышку': 'была представлена',
@@ -116,7 +107,6 @@ class MyMemoryTranslator:
             
             'фунтов-футов': 'Нм',
             'фунт-футов': 'Нм',
-            'фунтов-фут': 'Нм',
             'lb-ft': 'Нм',
             'lb ft': 'Нм',
             
@@ -124,7 +114,6 @@ class MyMemoryTranslator:
             'священное название': 'легендарное название',
             
             'свободной настройке выхлопных газов': 'свободно текущей выхлопной системе',
-            'свободная настройка выхлопных газов': 'свободно текущая выхлопная система',
             
             # Технические термины
             'лошадь': 'лошадиных сил',
@@ -151,30 +140,24 @@ class MyMemoryTranslator:
             'производитель': 'автопроизводитель',
             'производителя': 'автопроизводителя',
             
-            # Автоспорт
-            'прямых': 'прямых участках трассы',
-            'на прямых': 'на прямых участках трассы',
-            'с половиной десятых': 'на полдесятых секунды',
-            'десятых': 'десятых секунды',
-            
-            # Идиомы и фразы
+            # Идиомы
             'плывя против прилива': 'идя против тренда',
             'плывет против прилива': 'идёт против тренда',
             'против прилива': 'против тренда',
+            'anti-ev': 'анти-электрического',
+            'Anti-EV': 'анти-электрического',
             
-            'обдумывает': 'рассматривает',
-            'стремится предложить': 'планирует предложить',
+            # Уникальные модели
+            '1-из-1': 'единственный в своём роде',
+            '1-of-1': 'единственный в своём роде',
+            'one-of-one': 'единственный в своём роде',
+            'tags nostalgia': 'отсылает к ностальгии',
             
             # Цены и рынок
             'стартовая цена': 'начальная цена',
             'базовая цена': 'начальная цена',
             'базовая модель': 'базовая версия',
             'топ-модель': 'топ-версия',
-            
-            # Юбилеи и версии
-            'юбилейной отделке': 'юбилейной версии',
-            'юбилейная отделка': 'юбилейная версия',
-            'первую серийную': 'первый серийный',
             
             # Частые ошибки MyMemory
             'разоблачил': 'представил',
@@ -190,25 +173,29 @@ class MyMemoryTranslator:
             'открыл': 'представил',
             'открыла': 'представила',
             'открыто': 'представлено',
+            
+            # Страны СНГ
+            'беларусь': 'Беларусь',
+            'казахстан': 'Казахстан',
+            'узбекистан': 'Узбекистан',
+            'армения': 'Армения',
+            'азербайджан': 'Азербайджан',
+            'кыргызстан': 'Кыргызстан',
+            'молдова': 'Молдова',
+            'грузия': 'Грузия',
         }
         
-        # Специальные замены для целых фраз
+        # Фразовые замены
         self.phrase_replacements = [
             ('breaks cover', 'будет представлен'),
             ('broke cover', 'был представлен'),
-            ('break cover', 'будет представлен'),
-            
             ('ICE population', 'парк бензиновых автомобилей'),
             ('ICE Panda', 'бензиновая Panda'),
             ('ICE vehicles', 'автомобили с ДВС'),
-            
             ('family SUV', 'семейный внедорожник'),
             ('family hauler', 'семейный внедорожник'),
-            
             ('fatal crash', 'смертельная авария'),
             ('fatal accident', 'смертельная авария'),
-            ('fatal collision', 'смертельное столкновение'),
-            
             ('miles range', 'миль запаса хода'),
             ('mile range', 'миль запаса хода'),
             ('0-60 mph', '0-100 км/ч'),
@@ -219,7 +206,6 @@ class MyMemoryTranslator:
             ('lb-ft of torque', 'Нм крутящего момента'),
             ('lb-ft', 'Нм'),
             ('top speed', 'максимальная скорость'),
-            
             ('base price', 'начальная цена'),
             ('starting at', 'от'),
             ('starts at', 'от'),
@@ -227,21 +213,16 @@ class MyMemoryTranslator:
             ('goes on sale', 'поступит в продажу'),
             ('on sale now', 'уже в продаже'),
             ('available in', 'доступен в'),
-            
             ('unveiled', 'представлен'),
             ('revealed', 'представлен'),
             ('launched', 'запущен в производство'),
             ('introduced', 'представлен'),
-            
             ('on the straights', 'на прямых участках трассы'),
             ('on straights', 'на прямых'),
             ('half a tenth', 'полдесятых секунды'),
             ('tenths of a second', 'десятых секунды'),
-            
             ('swimming against the tide', 'идя против тренда'),
             ('against the tide', 'против тренда'),
-            ('anti-ev tide', 'тренда против электромобилей'),
-            
             ('according to', 'по данным'),
             ('spokesperson', 'представитель'),
             ('press release', 'пресс-релиз'),
@@ -255,13 +236,10 @@ class MyMemoryTranslator:
         ]
     
     def translate(self, text, source_lang='en', target_lang='ru'):
-        """Перевод текста с пост-обработкой"""
         if not text or len(text.strip()) == 0:
             return ""
-        
         if self._is_russian(text):
             return text
-        
         try:
             if self.daily_chars_used + len(text) > self.daily_limit:
                 logger.warning(f"⚠️ Дневной лимит MyMemory исчерпан")
@@ -283,33 +261,24 @@ class MyMemoryTranslator:
                 result = self._translate_with_postprocess(text, source_lang, target_lang)
             
             return result
-            
         except Exception as e:
             logger.warning(f"Ошибка MyMemory: {e}")
             return text
     
     def _translate_with_postprocess(self, text, source_lang, target_lang):
-        """Перевод с пост-обработкой"""
         translated = self._translate_chunk(text, source_lang, target_lang)
         translated = self._apply_glossary(translated)
         translated = self._final_cleanup(translated)
         return translated
     
     def _translate_chunk(self, text, source_lang, target_lang):
-        """Перевод одного куска через MyMemory API"""
         params = {
             'q': text,
             'langpair': f'{source_lang}|{target_lang}',
             'de': self.email if self.email else 'autoimpulse@mymemory.com'
         }
-        
-        response = requests.get(
-            self.translate_url,
-            params=params,
-            timeout=15
-        )
+        response = requests.get(self.translate_url, params=params, timeout=15)
         response.raise_for_status()
-        
         result = response.json()
         
         if 'responseStatus' in result and result['responseStatus'] == 200:
@@ -330,32 +299,31 @@ class MyMemoryTranslator:
         return text
     
     def _apply_glossary(self, text):
-        """Применение глоссария авто-терминов"""
         result = text
         sorted_terms = sorted(self.auto_glossary.items(), key=lambda x: len(x[0]), reverse=True)
-        
         for wrong, correct in sorted_terms:
             pattern = r'\b' + re.escape(wrong) + r'\b'
             result = re.sub(pattern, correct, result, flags=re.IGNORECASE)
-        
         return result
     
     def _final_cleanup(self, text):
-        """Финальная очистка перевода"""
         text = re.sub(r'\s+', ' ', text)
         text = re.sub(r'\s+([.,!?;:])', r'\1', text)
         text = re.sub(r'\. ([а-я])', lambda m: '. ' + m.group(1).upper(), text)
         if text and text[0].islower():
             text = text[0].upper() + text[1:]
-        
+        # Убираем обрезанные слова в конце
+        if text.endswith('-') or text.endswith('...'):
+            words = text.split()
+            if len(words) > 1:
+                if words[-1].endswith('-') or len(words[-1]) < 3:
+                    text = ' '.join(words[:-1])
         return text.strip()
     
     def _split_text(self, text, max_length):
-        """Разбиение текста на части по предложениям"""
         sentences = re.split(r'(?<=[.!?])\s+', text)
         parts = []
         current_part = ""
-        
         for sentence in sentences:
             if len(current_part) + len(sentence) + 1 <= max_length:
                 current_part = current_part + " " + sentence if current_part else sentence
@@ -363,14 +331,11 @@ class MyMemoryTranslator:
                 if current_part:
                     parts.append(current_part)
                 current_part = sentence
-        
         if current_part:
             parts.append(current_part)
-        
         return parts if parts else [text[:max_length]]
     
     def _is_russian(self, text):
-        """Проверка, что текст на русском"""
         if not text:
             return False
         cyrillic = sum(1 for c in text if 'а' <= c.lower() <= 'я')
@@ -388,27 +353,20 @@ translator = None
 if ENABLE_TRANSLATION:
     try:
         translator = MyMemoryTranslator(email=MYMEMORY_EMAIL)
-        
         tests = [
             ("Tesla unveiled new Model S with 500 miles range", "Tesla"),
             ("The car has 450 horsepower and 600 lb-ft of torque", "Мощность"),
             ("BMW recalls 10000 vehicles due to battery issue", "Отзыв"),
             ("Family SUV with 300 miles range breaks cover", "Внедорожник"),
         ]
-        
         logger.info(f"✅ MyMemory Translator инициализирован")
         if MYMEMORY_EMAIL:
             logger.info(f"📧 Email: {MYMEMORY_EMAIL} (лимит 50000 символов/день)")
-        else:
-            logger.info(f"⚠️ Email не указан. Добавьте MYMEMORY_EMAIL для увеличения лимита")
-        
         logger.info(f"🧪 Тесты перевода:")
         for en_text, hint in tests:
             ru_text = translator.translate(en_text, "en", "ru")
             logger.info(f"   EN: {en_text}")
             logger.info(f"   RU: {ru_text}")
-            logger.info("")
-        
     except Exception as e:
         logger.error(f"❌ Ошибка инициализации MyMemory: {e}")
         translator = None
@@ -417,16 +375,17 @@ else:
     logger.info("Перевод отключён")
 
 # ============================================
-# ВСЕ RSS-ИСТОЧНИКИ (РОССИЯ + ЗАРУБЕЖЬЕ)
+# ВСЕ RSS-ИСТОЧНИКИ (СНГ + ЕАЭС + ЗАРУБЕЖЬЕ)
 # ============================================
 
 RSS_FEEDS = [
-           # 🇷🇺 РОССИЙСКИЕ ИСТОЧНИКИ (ПРОВЕРЕННЫЕ РАБОЧИЕ)
+    # 🇷🇺 РОССИЯ (проверенные рабочие)
     {
         'name': 'Дром',
         'url': 'https://www.drom.ru/export/xml/news.rss',
         'lang': 'ru',
         'region': '🇷🇺',
+        'country': 'russia',
         'priority': 'high',
         'weight': 2.0,
         'category': 'russia'
@@ -436,6 +395,7 @@ RSS_FEEDS = [
         'url': 'https://www.vedomosti.ru/rss/rubric/auto',
         'lang': 'ru',
         'region': '🇷🇺',
+        'country': 'russia',
         'priority': 'high',
         'weight': 2.0,
         'category': 'russia'
@@ -445,6 +405,7 @@ RSS_FEEDS = [
         'url': 'https://www.autostat.ru/news/rss/',
         'lang': 'ru',
         'region': '🇷🇺',
+        'country': 'russia',
         'priority': 'medium',
         'weight': 1.5,
         'category': 'russia'
@@ -454,17 +415,133 @@ RSS_FEEDS = [
         'url': 'https://www.kommersant.ru/RSS/auto.xml',
         'lang': 'ru',
         'region': '🇷🇺',
+        'country': 'russia',
         'priority': 'medium',
         'weight': 1.5,
         'category': 'russia'
     },
     
-    # 🇬🇧 БРИТАНСКИЕ ИСТОЧНИКИ
+    # 🇧🇾 БЕЛАРУСЬ
+    {
+        'name': 'Onliner Авто (Беларусь)',
+        'url': 'https://auto.onliner.by/feed',
+        'lang': 'ru',
+        'region': '🇧🇾',
+        'country': 'belarus',
+        'priority': 'high',
+        'weight': 1.8,
+        'category': 'cis'
+    },
+    {
+        'name': 'ABW.BY (Беларусь)',
+        'url': 'https://www.abw.by/rss',
+        'lang': 'ru',
+        'region': '🇧🇾',
+        'country': 'belarus',
+        'priority': 'high',
+        'weight': 1.8,
+        'category': 'cis'
+    },
+    {
+        'name': 'AV.BY (Беларусь)',
+        'url': 'https://av.by/rss',
+        'lang': 'ru',
+        'region': '🇧🇾',
+        'country': 'belarus',
+        'priority': 'medium',
+        'weight': 1.5,
+        'category': 'cis'
+    },
+    
+    # 🇰🇿 КАЗАХСТАН
+    {
+        'name': 'Kolesa (Казахстан)',
+        'url': 'https://kolesa.kz/rss/',
+        'lang': 'ru',
+        'region': '🇰🇿',
+        'country': 'kazakhstan',
+        'priority': 'high',
+        'weight': 1.8,
+        'category': 'cis'
+    },
+    {
+        'name': 'Krisha (Казахстан)',
+        'url': 'https://krisha.kz/rss/',
+        'lang': 'ru',
+        'region': '🇰🇿',
+        'country': 'kazakhstan',
+        'priority': 'high',
+        'weight': 1.8,
+        'category': 'cis'
+    },
+    
+    # 🇦🇲 АРМЕНИЯ
+    {
+        'name': 'News.am Авто (Армения)',
+        'url': 'https://news.am/rss/auto/ru',
+        'lang': 'ru',
+        'region': '🇦🇲',
+        'country': 'armenia',
+        'priority': 'medium',
+        'weight': 1.3,
+        'category': 'cis'
+    },
+    
+    # 🇦🇿 АЗЕРБАЙДЖАН
+    {
+        'name': '1news.az Авто (Азербайджан)',
+        'url': 'https://1news.az/rss.php?lang=ru&cat=auto',
+        'lang': 'ru',
+        'region': '🇦🇿',
+        'country': 'azerbaijan',
+        'priority': 'medium',
+        'weight': 1.3,
+        'category': 'cis'
+    },
+    
+    # 🇺🇿 УЗБЕКИСТАН
+    {
+        'name': 'Kun.uz Авто (Узбекистан)',
+        'url': 'https://kun.uz/ru/news/rss?category=auto',
+        'lang': 'ru',
+        'region': '🇺🇿',
+        'country': 'uzbekistan',
+        'priority': 'medium',
+        'weight': 1.3,
+        'category': 'cis'
+    },
+    
+    # 🇰🇬 КЫРГЫЗСТАН
+    {
+        'name': 'Kolesa KG (Кыргызстан)',
+        'url': 'https://kolesa.kg/rss/',
+        'lang': 'ru',
+        'region': '🇰🇬',
+        'country': 'kyrgyzstan',
+        'priority': 'medium',
+        'weight': 1.3,
+        'category': 'cis'
+    },
+    
+    # 🇲🇩 МОЛДОВА
+    {
+        'name': 'Auto.MD (Молдова)',
+        'url': 'https://auto.md/feed/',
+        'lang': 'ru',
+        'region': '🇲🇩',
+        'country': 'moldova',
+        'priority': 'medium',
+        'weight': 1.3,
+        'category': 'cis'
+    },
+    
+    # 🇬🇧 БРИТАНИЯ
     {
         'name': 'Autocar UK',
         'url': 'https://www.autocar.co.uk/rss',
         'lang': 'en',
         'region': '🇬🇧',
+        'country': 'uk',
         'priority': 'high',
         'weight': 1.5
     },
@@ -473,24 +550,18 @@ RSS_FEEDS = [
         'url': 'https://www.autoexpress.co.uk/rss',
         'lang': 'en',
         'region': '🇬🇧',
-        'priority': 'medium',
-        'weight': 1
-    },
-    {
-        'name': 'Evo Magazine',
-        'url': 'https://www.evo.co.uk/rss',
-        'lang': 'en',
-        'region': '🇬🇧',
+        'country': 'uk',
         'priority': 'medium',
         'weight': 1
     },
     
-    # 🇺🇸 АМЕРИКАНСКИЕ ИСТОЧНИКИ
+    # 🇺🇸 США
     {
         'name': 'Car and Driver',
         'url': 'https://www.caranddriver.com/rss/all.xml/',
         'lang': 'en',
         'region': '🇺🇸',
+        'country': 'usa',
         'priority': 'high',
         'weight': 1.5
     },
@@ -499,6 +570,7 @@ RSS_FEEDS = [
         'url': 'https://www.motor1.com/rss/news/all/',
         'lang': 'en',
         'region': '🇺🇸',
+        'country': 'usa',
         'priority': 'high',
         'weight': 1.5
     },
@@ -507,6 +579,7 @@ RSS_FEEDS = [
         'url': 'https://www.roadandtrack.com/rss/all.xml/',
         'lang': 'en',
         'region': '🇺🇸',
+        'country': 'usa',
         'priority': 'high',
         'weight': 1.5
     },
@@ -515,6 +588,7 @@ RSS_FEEDS = [
         'url': 'https://www.thedrive.com/rss',
         'lang': 'en',
         'region': '🇺🇸',
+        'country': 'usa',
         'priority': 'high',
         'weight': 1.5
     },
@@ -525,6 +599,7 @@ RSS_FEEDS = [
         'url': 'https://electrek.co/feed/',
         'lang': 'en',
         'region': '🌍',
+        'country': 'world',
         'priority': 'high',
         'category': 'electric',
         'weight': 2
@@ -534,6 +609,7 @@ RSS_FEEDS = [
         'url': 'https://cleantechnica.com/feed/',
         'lang': 'en',
         'region': '🌍',
+        'country': 'world',
         'priority': 'high',
         'category': 'electric',
         'weight': 2
@@ -543,6 +619,7 @@ RSS_FEEDS = [
         'url': 'https://www.greencarreports.com/rss',
         'lang': 'en',
         'region': '🌍',
+        'country': 'world',
         'priority': 'high',
         'category': 'electric',
         'weight': 2
@@ -554,24 +631,17 @@ RSS_FEEDS = [
         'url': 'https://www.autosport.com/rss/feed/all',
         'lang': 'en',
         'region': '🌍',
+        'country': 'world',
         'priority': 'medium',
         'category': 'motorsport',
         'weight': 1.5
-    },
-    {
-        'name': 'Planet F1',
-        'url': 'https://www.planetf1.com/feed/',
-        'lang': 'en',
-        'region': '🌍',
-        'priority': 'high',
-        'category': 'motorsport',
-        'weight': 2
     },
     {
         'name': 'Crash.net',
         'url': 'https://www.crash.net/rss',
         'lang': 'en',
         'region': '🌍',
+        'country': 'world',
         'priority': 'medium',
         'category': 'motorsport',
         'weight': 1.5
@@ -583,6 +653,7 @@ RSS_FEEDS = [
         'url': 'https://supercarblondie.com/feed/',
         'lang': 'en',
         'region': '🌍',
+        'country': 'world',
         'priority': 'high',
         'category': 'luxury',
         'weight': 2
@@ -594,6 +665,7 @@ RSS_FEEDS = [
         'url': 'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=15837362',
         'lang': 'en',
         'region': '🇺🇸',
+        'country': 'usa',
         'priority': 'high',
         'weight': 1.5
     },
@@ -604,18 +676,15 @@ RSS_FEEDS = [
 # ============================================
 
 HOT_KEYWORDS = {
-    # 🇷🇺 РОССИЙСКИЕ КЛЮЧЕВЫЕ СЛОВА (высокий приоритет)
+    # 🇷🇺 РОССИЯ
     'lada': 4, 'лада': 4, 'ваз': 4, 'уаз': 4, 'камаз': 4,
     'aurus': 4, 'москвич': 4, 'европротокол': 4,
     'россия': 3, 'российский': 3, 'российская': 3,
-    'автоваз': 4, 'sollers': 3, 'белджи': 3, 'хавейл': 3,
-    'chery': 3, 'haval': 3, 'geely': 3, 'changan': 3,
+    'автоваз': 4, 'sollers': 3, 'chery': 3, 'haval': 3, 'geely': 3, 'changan': 3,
     'отзыв': 3, 'отзывают': 3, 'отозван': 3,
     'штраф': 3, 'штрафы': 3, 'пдд': 3, 'гаи': 3, 'гибдд': 3,
-    'автосалон': 3, 'дилер': 3, 'дилеры': 3,
     'акциз': 3, 'налог': 3, 'утилизационный сбор': 4,
-    'китайские авто': 3, 'китайский автомобиль': 3,
-    'parallel import': 3, 'параллельный импорт': 3,
+    'параллельный импорт': 3,
     'цена': 2, 'цены': 2, 'стоимость': 2, 'подорожание': 3,
     'продажи': 3, 'статистика': 2, 'рынок': 2,
     'дтп': 3, 'авария': 3, 'катастрофа': 3,
@@ -624,11 +693,21 @@ HOT_KEYWORDS = {
     'миллион': 2, 'миллиард': 2,
     'электрокар': 3, 'электромобиль': 3,
     
+    # 🇧🇾🇰🇿🇦🇲🇦🇿🇺🇿🇰🇬🇲🇩 СНГ
+    'беларусь': 3, 'белоруссия': 3, 'минск': 2,
+    'казахстан': 3, 'казахский': 2, 'алматы': 2, 'астана': 2,
+    'узбекистан': 3, 'узбекский': 2, 'ташкент': 2,
+    'армения': 3, 'армянский': 2, 'ереван': 2,
+    'азербайджан': 3, 'азербайджанский': 2, 'баку': 2,
+    'кыргызстан': 3, 'киргизия': 3, 'бишкек': 2,
+    'молдова': 3, 'молдавский': 2, 'кишинев': 2,
+    'тбилиси': 2, 'грузия': 2,
+    
     # Топ-бренды
     'tesla': 3, 'bugatti': 3, 'ferrari': 3, 'lamborghini': 3, 'porsche': 2,
     'rolls-royce': 3, 'mclaren': 3, 'pagani': 3, 'koenigsegg': 3,
     
-    # Электромобили и инновации
+    # Электромобили
     'electric': 2, 'ev': 2, 'autonomous': 3, 'self-driving': 3, 'autopilot': 3,
     'battery': 2, 'charging': 2, 'hydrogen': 2, 'revolutionary': 3,
     
@@ -640,14 +719,13 @@ HOT_KEYWORDS = {
     'f1': 2, 'formula 1': 2, 'wrc': 2, 'le mans': 2, 'championship': 2,
     'victory': 2, 'record': 2,
     
-    # Скандалы и проблемы
+    # Скандалы
     'recall': 2, 'crash': 2, 'accident': 2, 'bankrupt': 3, 'scandal': 3,
     
     # Цифры
     'million': 2, 'billion': 2, 'fastest': 2, 'most expensive': 3,
     'best-selling': 2,
     
-    # Русские слова
     'гибрид': 2,
     'тесла': 3, 'феррари': 3, 'ламборгини': 3, 'порше': 2,
 }
@@ -659,6 +737,13 @@ CATEGORIES = {
                      'штраф', 'пдд', 'гибдд', 'отзыв', 'дилер', 'акциз'],
         'emoji': '🇷🇺',
         'name': 'Россия'
+    },
+    'cis': {
+        'keywords': ['беларусь', 'белоруссия', 'казахстан', 'узбекистан', 'армения',
+                     'азербайджан', 'кыргызстан', 'молдова', 'грузия', 'минск',
+                     'алматы', 'астана', 'ташкент', 'ереван', 'баку', 'бишкек', 'кишинев'],
+        'emoji': '🌐',
+        'name': 'СНГ/ЕАЭС'
     },
     'electric': {
         'keywords': ['tesla', 'electric', 'ev', 'battery', 'charging', 'электро', 'гибрид', 'ion', 'ioniq', 'тесла', 'электрокар', 'электромобиль'],
@@ -683,7 +768,7 @@ CATEGORIES = {
 }
 
 def calculate_news_score(entry, feed_info):
-    """Рассчитывает рейтинг новости (0-10+)"""
+    """Рассчитывает рейтинг новости"""
     title = entry.get('title', '').lower()
     summary = entry.get('summary', '').lower()
     text = f"{title} {summary}"
@@ -699,7 +784,7 @@ def calculate_news_score(entry, feed_info):
     if feed_info.get('priority') == 'high':
         score += 1
     elif feed_info.get('priority') == 'medium':
-        score += 0.5  # Было +1 для high, теперь +0.5 для medium
+        score += 0.5
     
     score += feed_info.get('weight', 1) * 0.5
     
@@ -709,10 +794,14 @@ def calculate_news_score(entry, feed_info):
     if 20 < len(entry.get('title', '')) < 100:
         score += 0.5
     
-    # 🇺 КОРРЕКТИРОВКА: понижаем рейтинг российских новостей на 30%
-    # чтобы они составляли ~15-17% от публикаций (1 из 6-7)
-    if feed_info.get('lang') == 'ru':
-        score *= 1.7
+    # 🇷🇺 Мягкая корректировка для российских новостей (чтобы не доминировали)
+    if feed_info.get('country') == 'russia':
+        score *= 1.85
+    
+    # 🌐 Бонус для новостей СНГ (поддерживаем регион)
+    if feed_info.get('country') in ['belarus', 'kazakhstan', 'armenia', 'azerbaijan', 
+                                     'uzbekistan', 'kyrgyzstan', 'moldova']:
+        score *= 1.1
     
     return round(score, 2), matched_keywords
 
@@ -722,15 +811,19 @@ def get_news_category(entry, feed_info):
     summary = entry.get('summary', '').lower()
     text = f"{title} {summary}"
     
+    # Сначала проверяем по источнику
+    if 'category' in feed_info:
+        cat_id = feed_info['category']
+        if cat_id in CATEGORIES:
+            # Для России и СНГ — всегда показываем соответствующую категорию
+            if cat_id in ['russia', 'cis']:
+                return cat_id, CATEGORIES[cat_id]
+    
+    # Затем по ключевым словам
     for cat_id, cat_info in CATEGORIES.items():
         for keyword in cat_info['keywords']:
             if keyword in text:
                 return cat_id, cat_info
-    
-    if 'category' in feed_info:
-        cat_id = feed_info['category']
-        if cat_id in CATEGORIES:
-            return cat_id, CATEGORIES[cat_id]
     
     return 'general', {'emoji': '🚗', 'name': 'Новости'}
 
@@ -780,7 +873,6 @@ def get_news_id(entry):
     return hashlib.md5(unique_str.encode('utf-8')).hexdigest()
 
 def translate_text(text, source_lang='en'):
-    """Перевод текста"""
     if not ENABLE_TRANSLATION or not translator:
         return text
     if not text or len(text.strip()) == 0:
@@ -797,18 +889,13 @@ def clean_html(text):
     clean_text = re.sub('<[^<]+?>', '', text)
     clean_text = re.sub(r'\s+', ' ', clean_text)
     clean_text = clean_text.strip()
-    
-    # Убираем обрезанные слова в конце (например, "re-", "anti-")
     if clean_text.endswith('-') or clean_text.endswith('...'):
-        # Находим последнее полное слово
         words = clean_text.split()
         if len(words) > 1:
-            # Убираем последнее слово если оно обрезано
             if words[-1].endswith('-') or len(words[-1]) < 3:
                 clean_text = ' '.join(words[:-1])
-    
     return clean_text
-    
+
 def get_image_url(entry):
     if not ENABLE_IMAGES:
         return None
@@ -845,16 +932,23 @@ def generate_hashtags(entry, feed_info):
     tags = ['#автоновости']
     
     cat_id, cat_info = get_news_category(entry, feed_info)
-    if cat_id != 'general':
-        tags.append(f"#{cat_id}")
-    
-    region = feed_info.get('region', '')
-    if '🇷🇺' in region:
+    if cat_id == 'russia':
         tags.append('#россия')
-    elif '🇺🇸' in region:
-        tags.append('#сша')
-    elif '🇬🇧' in region:
-        tags.append('#европа')
+    elif cat_id == 'cis':
+        country = feed_info.get('country', '')
+        country_tags = {
+            'belarus': '#беларусь',
+            'kazakhstan': '#казахстан',
+            'armenia': '#армения',
+            'azerbaijan': '#азербайджан',
+            'uzbekistan': '#узбекистан',
+            'kyrgyzstan': '#кыргызстан',
+            'moldova': '#молдова'
+        }
+        if country in country_tags:
+            tags.append(country_tags[country])
+    elif cat_id != 'general':
+        tags.append(f"#{cat_id}")
     
     brands = {
         'tesla': '#tesla', 'toyota': '#toyota', 'bmw': '#bmw', 
@@ -864,7 +958,7 @@ def generate_hashtags(entry, feed_info):
         'hyundai': '#hyundai', 'kia': '#kia', 'lada': '#лада',
         'bugatti': '#bugatti', 'mclaren': '#mclaren', 'rolls-royce': '#rollsroyce',
         'chery': '#chery', 'haval': '#haval', 'geely': '#geely',
-        'changan': '#changan', 'uaz': '#уаз', 'kamaz': '#камаз'
+        'changan': '#changan'
     }
     
     for brand, tag in brands.items():
@@ -880,7 +974,6 @@ def format_message(entry, feed_info, score, category):
     link = entry.get('link', '')
     original_summary = entry.get('summary', '')
     
-    # Переводим только если источник НЕ на русском
     source_lang = feed_info.get('lang', 'en')
     
     if ENABLE_TRANSLATION and translator and source_lang != 'ru':
@@ -900,7 +993,6 @@ def format_message(entry, feed_info, score, category):
     cat_emoji = category['emoji']
     cat_name = category['name']
     
-    # Индикатор "горячести"
     if score >= 7:
         hot_indicator = "🔥🔥🔥 *ГОРЯЧАЯ НОВОСТЬ*\n\n"
     elif score >= 5:
@@ -941,8 +1033,7 @@ def send_news_to_channel(message, image_url=None):
                 )
                 return True
             except Exception as img_error:
-                # Если изображение не отправилось, отправляем без него
-                logger.warning(f"⚠️ Не удалось отправить изображение: {img_error}")
+                logger.warning(f"⚠️ Не удалось отправить изображение, отправляем без него")
                 bot.send_message(
                     CHANNEL_ID,
                     message,
@@ -971,6 +1062,8 @@ def fetch_and_publish():
     new_count = 0
     error_count = 0
     skipped_count = 0
+    working_sources = 0
+    failed_sources = 0
     
     all_news = []
     
@@ -986,8 +1079,13 @@ def fetch_and_publish():
             )
             
             if feed.bozo and not feed.entries:
-                logger.warning(f"Ошибка RSS {feed_info['name']}: {feed.bozo_exception}")
+                logger.warning(f"❌ Ошибка RSS {feed_info['name']}: {feed.bozo_exception}")
+                failed_sources += 1
                 continue
+            
+            if feed.entries:
+                working_sources += 1
+                logger.info(f"✅ {feed_info['name']}: найдено {len(feed.entries)} новостей")
             
             for entry in feed.entries[:NEWS_PER_SOURCE]:
                 news_id = get_news_id(entry)
@@ -1009,20 +1107,52 @@ def fetch_and_publish():
                         
         except Exception as e:
             logger.error(f"Ошибка {feed_info['name']}: {e}")
-            error_count += 1
+            failed_sources += 1
             continue
     
-    # Сортируем по рейтингу (от высокого к низкому)
     all_news.sort(key=lambda x: x['score'], reverse=True)
     
-    logger.info(f"Собрано {len(all_news)} новостей")
+    logger.info(f"📊 Рабочих источников: {working_sources} | Не рабочих: {failed_sources}")
+    logger.info(f"📰 Собрано {len(all_news)} новостей")
     
-    # Публикуем только новости с рейтингом >= MIN_SCORE
+    # 🌐 Балансировка: не более 1/6-1/7 постов из России
+    russian_count = 0
+    foreign_count = 0
+    cis_count = 0
+    published_news = []
+    
     for news_data in all_news:
-        if news_data['score'] < MIN_SCORE:
+        score = news_data['score']
+        country = news_data['feed_info'].get('country', 'world')
+        is_russian = country == 'russia'
+        is_cis = country in ['belarus', 'kazakhstan', 'armenia', 'azerbaijan', 
+                              'uzbekistan', 'kyrgyzstan', 'moldova']
+        
+        if score < MIN_SCORE:
             skipped_count += 1
             continue
         
+        # 🇷🇺 Балансировка России: 1 из 6-7 постов
+        if is_russian:
+            if foreign_count + cis_count >= russian_count * 5:
+                russian_count += 1
+            else:
+                skipped_count += 1
+                continue
+        
+        # 🌐 Новости СНГ идут без ограничений (но не доминируют)
+        if is_cis:
+            cis_count += 1
+        else:
+            foreign_count += 1
+        
+        published_news.append(news_data)
+        
+        if len(published_news) >= 15:
+            break
+    
+    # Публикуем
+    for news_data in published_news:
         entry = news_data['entry']
         feed_info = news_data['feed_info']
         news_id = news_data['news_id']
@@ -1035,12 +1165,16 @@ def fetch_and_publish():
         if send_news_to_channel(message, image_url):
             save_published(news_id)
             new_count += 1
-            logger.info(f"✅ Опубликована (рейтинг {score}): {title[:50]}...")
+            country = feed_info.get('country', 'world')
+            flag = {'russia': '🇷🇺', 'belarus': '🇧🇾', 'kazakhstan': '🇰🇿',
+                    'armenia': '🇦🇲', 'azerbaijan': '🇦🇿', 'uzbekistan': '🇺🇿',
+                    'kyrgyzstan': '🇰🇬', 'moldova': '🇲🇩'}.get(country, '🌍')
+            logger.info(f"✅ [{flag}] Опубликована (рейтинг {score}): {title[:50]}...")
             time.sleep(3)
         else:
             error_count += 1
     
-    logger.info(f"Итог: ✅{new_count} | ⏭️{skipped_count} | ❌{error_count}")
+    logger.info(f"📈 Итог: ✅{new_count} | 🇷🇺{russian_count} | 🌐СНГ{cis_count} | 🌍Зарубежье{foreign_count} | ⏭️{skipped_count} | ❌{error_count}")
     return new_count, error_count
 
 def send_startup_message():
@@ -1048,6 +1182,9 @@ def send_startup_message():
         startup_message = (
             "🤖 *Auto imPulse News Bot запущен!*\n\n"
             f"📊 Источников: {len(RSS_FEEDS)}\n"
+            f"🌍 Страны: Россия, Беларусь, Казахстан, Армения,\n"
+            f"      Азербайджан, Узбекистан, Кыргызстан, Молдова\n"
+            f"      + Великобритания, США, мир\n"
             f"⏱️ Интервал: {CHECK_INTERVAL // 60} мин\n"
             f"📈 Мин. рейтинг: {MIN_SCORE}/10\n"
             f"🌐 Перевод: {'✅ MyMemory + глоссарий' if ENABLE_TRANSLATION else '❌'}\n"
