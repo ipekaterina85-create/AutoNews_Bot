@@ -796,7 +796,7 @@ def calculate_news_score(entry, feed_info):
     
     # 🇷🇺 Мягкая корректировка для российских новостей (чтобы не доминировали)
     if feed_info.get('country') == 'russia':
-        score *= 1.85
+        score *= 1.1
     
     # 🌐 Бонус для новостей СНГ (поддерживаем регион)
     if feed_info.get('country') in ['belarus', 'kazakhstan', 'armenia', 'azerbaijan', 
