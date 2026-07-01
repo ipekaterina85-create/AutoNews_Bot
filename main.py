@@ -5,6 +5,8 @@ import re
 import logging
 import signal
 import sys
+import base64
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -12,7 +14,7 @@ import feedparser
 import requests
 from telebot import TeleBot, types
 from telebot import apihelper
-from deep_translator import GoogleTranslator
+import jwt  # PyJWT для авторизации
 
 # ============================================
 # КОНФИГУРАЦИЯ
@@ -20,6 +22,12 @@ from deep_translator import GoogleTranslator
 
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 CHANNEL_ID = os.environ.get('CHANNEL_ID')
+
+# Яндекс Cloud credentials
+YC_FOLDER_ID = os.environ.get('YC_FOLDER_ID')  # ID каталога
+YC_SERVICE_ACCOUNT_ID = os.environ.get('YC_SERVICE_ACCOUNT_ID')  # ID сервисного аккаунта
+YC_PRIVATE_KEY = os.environ.get('YC_PRIVATE_KEY')  # Приватный ключ (в формате PEM)
+
 CHECK_INTERVAL = int(os.environ.get('CHECK_INTERVAL', 1800))
 NEWS_PER_SOURCE = int(os.environ.get('NEWS_PER_SOURCE', 3))
 MAX_DESCRIPTION_LENGTH = int(os.environ.get('MAX_DESCRIPTION_LENGTH', 500))
@@ -61,19 +69,143 @@ if PROXY_URL:
     apihelper.proxy = {'https': PROXY_URL}
     logger.info(f"Используется прокси: {PROXY_URL}")
 
+# ============================================
+# ЯНДЕКС TRANSLATE API
+# ============================================
+
+class YandexTranslator:
+    """Класс для работы с Яндекс Translate API"""
+    
+    def __init__(self, folder_id, service_account_id, private_key):
+        self.folder_id = folder_id
+        self.service_account_id = service_account_id
+        self.private_key = private_key
+        self.iam_token = None
+        self.iam_token_expires = 0
+        self.translate_url = "https://translate.api.cloud.yandex.net/translate/v2/translate"
+        self.iam_url = "https://iam.api.cloud.yandex.net/iam/v1/tokens"
+        
+    def get_iam_token(self):
+        """Получение IAM-токена для авторизации"""
+        # Если токен ещё действителен — используем его
+        if self.iam_token and time.time() < self.iam_token_expires - 60:
+            return self.iam_token
+        
+        try:
+            # Создаём JWT для получения IAM-токена
+            now = int(time.time())
+            payload = {
+                'aud': 'https://iam.api.cloud.yandex.net/iam/v1/tokens',
+                'iss': self.service_account_id,
+                'iat': now,
+                'exp': now + 3600
+            }
+            
+            # Подписываем JWT
+            encoded_token = jwt.encode(
+                payload,
+                self.private_key,
+                algorithm='PS256',
+                headers={'kid': self.service_account_id}
+            )
+            
+            # Запрашиваем IAM-токен
+            response = requests.post(
+                self.iam_url,
+                json={'jwt': encoded_token},
+                timeout=10
+            )
+            response.raise_for_status()
+            
+            self.iam_token = response.json()['iamToken']
+            self.iam_token_expires = time.time() + 3600  # Токен живёт 1 час
+            
+            logger.info("✅ IAM-токен Яндекс получен успешно")
+            return self.iam_token
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения IAM-токена: {e}")
+            raise
+    
+    def translate(self, text, source_lang='en', target_lang='ru'):
+        """Перевод текста"""
+        if not text or len(text.strip()) == 0:
+            return ""
+        
+        try:
+            # Ограничение на длину (Яндекс: 10000 символов за запрос)
+            if len(text) > 9500:
+                text = text[:9500]
+            
+            iam_token = self.get_iam_token()
+            
+            headers = {
+                'Authorization': f'Bearer {iam_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            data = {
+                'folderId': self.folder_id,
+                'texts': [text],
+                'sourceLanguageCode': source_lang,
+                'targetLanguageCode': target_lang
+            }
+            
+            response = requests.post(
+                self.translate_url,
+                headers=headers,
+                json=data,
+                timeout=15
+            )
+            response.raise_for_status()
+            
+            result = response.json()
+            if 'translations' in result and len(result['translations']) > 0:
+                return result['translations'][0]['text']
+            
+            return text
+            
+        except Exception as e:
+            logger.warning(f"Ошибка перевода Яндекс: {e}")
+            return text
+
+# Инициализация переводчика
 if ENABLE_TRANSLATION:
-    translator = GoogleTranslator(source='auto', target='ru')
-    logger.info("Перевод включён")
+    try:
+        # Проверяем наличие всех необходимых переменных
+        if not YC_FOLDER_ID or not YC_SERVICE_ACCOUNT_ID or not YC_PRIVATE_KEY:
+            raise ValueError(
+                "❌ Не настроены переменные Яндекс Cloud! "
+                "Нужны: YC_FOLDER_ID, YC_SERVICE_ACCOUNT_ID, YC_PRIVATE_KEY"
+            )
+        
+        # Преобразуем приватный ключ (может быть в base64)
+        private_key = YC_PRIVATE_KEY
+        if not private_key.startswith('-----BEGIN'):
+            # Если ключ в base64 — декодируем
+            try:
+                private_key = base64.b64decode(private_key).decode('utf-8')
+            except:
+                pass
+        
+        translator = YandexTranslator(YC_FOLDER_ID, YC_SERVICE_ACCOUNT_ID, private_key)
+        
+        # Проверяем работоспособность
+        test_translation = translator.translate("Hello world", "en", "ru")
+        logger.info(f"✅ Яндекс Translate инициализирован. Тест: 'Hello world' → '{test_translation}'")
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка инициализации Яндекс Translate: {e}")
+        raise
 else:
     translator = None
     logger.info("Перевод отключён")
 
 # ============================================
-# РАБОЧИЕ RSS-ИСТОЧНИКИ (проверенные)
+# RSS-ИСТОЧНИКИ
 # ============================================
 
 RSS_FEEDS = [
-    # Европейские источники
     {
         'name': 'Autocar UK',
         'url': 'https://www.autocar.co.uk/rss',
@@ -88,8 +220,6 @@ RSS_FEEDS = [
         'region': '🇬🇧',
         'priority': 'medium'
     },
-    
-    # Американские источники
     {
         'name': 'Car and Driver',
         'url': 'https://www.caranddriver.com/rss/all.xml/',
@@ -118,8 +248,6 @@ RSS_FEEDS = [
         'region': '🇺🇸',
         'priority': 'medium'
     },
-    
-    # Электромобили
     {
         'name': 'InsideEVs',
         'url': 'https://insideevs.com/rss/all/',
@@ -144,8 +272,6 @@ RSS_FEEDS = [
         'priority': 'medium',
         'category': 'electric'
     },
-    
-    # Автоспорт
     {
         'name': 'Autosport',
         'url': 'https://www.autosport.com/rss/feed/all',
@@ -177,7 +303,7 @@ def load_published():
             with open(PUBLISHED_FILE, 'r', encoding='utf-8') as f:
                 return set(line.strip() for line in f if line.strip())
         except Exception as e:
-            logger.error(f"Ошибка загрузки published_news.txt: {e}")
+            logger.error(f"Ошибка загрузки: {e}")
             return set()
     return set()
 
@@ -210,15 +336,14 @@ def get_news_id(entry):
     return hashlib.md5(unique_str.encode('utf-8')).hexdigest()
 
 def translate_text(text, source_lang='en'):
+    """Перевод текста через Яндекс Translate"""
     if not ENABLE_TRANSLATION or not translator:
         return text
     if not text or len(text.strip()) == 0:
         return ""
+    
     try:
-        if len(text) > 5000:
-            text = text[:5000]
-        translated = translator.translate(text)
-        return translated if translated else text
+        return translator.translate(text, source_lang, 'ru')
     except Exception as e:
         logger.warning(f"Ошибка перевода: {e}")
         return text
@@ -331,10 +456,8 @@ def format_message(entry, feed_info):
     return message, translated_title
 
 def send_news_to_channel(message, image_url=None):
-    """ИСПРАВЛЕННАЯ ФУНКЦИЯ - убран disable_web_page_preview из send_photo"""
     try:
         if image_url and ENABLE_IMAGES:
-            # ВАЖНО: disable_web_page_preview НЕ поддерживается в send_photo!
             bot.send_photo(
                 CHANNEL_ID,
                 image_url,
@@ -406,9 +529,9 @@ def send_startup_message():
             "🤖 *Auto imPulse News Bot запущен!*\n\n"
             f"📊 Источников: {len(RSS_FEEDS)}\n"
             f"⏱️ Интервал проверки: {CHECK_INTERVAL // 60} минут\n"
-            f"🌐 Перевод: {'✅ Включён' if ENABLE_TRANSLATION else '❌ Выключен'}\n"
-            f"🖼️ Изображения: {'✅ Включены' if ENABLE_IMAGES else '❌ Выключены'}\n"
-            f"🏷️ Хештеги: {'✅ Включены' if ENABLE_HASHTAGS else '❌ Выключены'}\n\n"
+            f"🌐 Переводчик: Яндекс Translate {'✅' if ENABLE_TRANSLATION else '❌'}\n"
+            f"🖼️ Изображения: {'✅' if ENABLE_IMAGES else '❌'}\n"
+            f"🏷️ Хештеги: {'✅' if ENABLE_HASHTAGS else '❌'}\n\n"
             f"🕐 Время запуска: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
         logger.info("Бот успешно запущен!")
@@ -424,18 +547,12 @@ def graceful_shutdown(signum, frame):
 signal.signal(signal.SIGTERM, graceful_shutdown)
 signal.signal(signal.SIGINT, graceful_shutdown)
 
-# ============================================
-# ПРОВЕРКА ПОДКЛЮЧЕНИЯ К КАНАЛУ
-# ============================================
-
 def check_channel_access():
-    """Проверяем, что бот имеет доступ к каналу"""
     try:
         logger.info(f"Проверяем доступ к каналу: {CHANNEL_ID}")
         chat = bot.get_chat(CHANNEL_ID)
         logger.info(f"✅ Канал найден: {chat.title}")
         
-        # Проверяем, что бот админ
         admins = bot.get_chat_administrators(CHANNEL_ID)
         bot_username = bot.get_me().username
         is_admin = any(admin.user.username == bot_username for admin in admins)
@@ -445,51 +562,7 @@ def check_channel_access():
             return True
         else:
             logger.error(f"❌ Бот @{bot_username} НЕ является администратором канала!")
-            logger.error("Добавьте бота в канал как администратора с правом 'Публикация сообщений'")
             return False
             
     except Exception as e:
-        logger.error(f"❌ Ошибка доступа к каналу: {e}")
-        logger.error("Возможные причины:")
-        logger.error("1. Бот не добавлен в канал")
-        logger.error("2. Неправильный CHANNEL_ID")
-        logger.error("3. Канал приватный, а указан username (нужен ID)")
-        return False
-
-# ============================================
-# ГЛАВНЫЙ ЦИКЛ
-# ============================================
-
-def main():
-    logger.info("=" * 50)
-    logger.info("Auto imPulse News Bot запускается...")
-    logger.info("=" * 50)
-    
-    # ВАЖНО: Проверяем доступ к каналу перед запуском
-    if not check_channel_access():
-        logger.error("❌ Нет доступа к каналу! Останавливаем бота.")
-        logger.error("Исправьте проблему и перезапустите бота.")
-        sys.exit(1)
-    
-    send_startup_message()
-    
-    while True:
-        try:
-            new_count, error_count = fetch_and_publish()
-            logger.info(f"Следующая проверка через {CHECK_INTERVAL} секунд ({CHECK_INTERVAL // 60} минут)")
-            time.sleep(CHECK_INTERVAL)
-        except KeyboardInterrupt:
-            logger.info("Остановка по Ctrl+C")
-            break
-        except Exception as e:
-            logger.error(f"Критическая ошибка: {e}", exc_info=True)
-            time.sleep(60)
-    
-    logger.info("Бот остановлен")
-
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        logger.critical(f"Фатальная ошибка: {e}", exc_info=True)
-        sys.exit(1)
+        logger.error(f"❌ Ошибка доступа к каналу:
