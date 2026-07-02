@@ -1175,64 +1175,100 @@ def calculate_similarity(news1, news2):
     return 'low'
 
 
-def remove_duplicates(news_list, time_window_hours=24):
+def remove_duplicates(news_list, time_window_hours=48):
     """
-    Удаляет дубликаты новостей с улучшенной логикой.
+    Удаляет дубликаты новостей с УЛУЧШЕННОЙ логикой.
+    Проверяет заголовок, URL и ключевые слова.
     """
     if not news_list:
         return news_list
     
     unique_news = []
-    seen_news = []  # Список уже обработанных новостей
+    seen_titles = {}  # normalized_title → news_data
+    seen_urls = set()  # url_hash
+    seen_keys = {}  # words_key → news_data
     
-    cutoff_time = time.time() - (time_window_hours * 3600)
+    logger.info(f" Начинаю дедупликацию {len(news_list)} новостей...")
     
     for news_data in news_list:
-        is_duplicate = False
-        best_match = None
-        best_match_type = None
+        entry = news_data['entry']
+        title = entry.get('title', '').strip().lower()
+        link = entry.get('link', '').strip()
+        news_key = news_data.get('news_key', {})
         
-        # Проверяем каждую уже добавленную новость
-        for seen_data in seen_news:
-            similarity = calculate_similarity(news_data, seen_data)
-            
-            if similarity in ['exact', 'high']:
+        # Нормализуем заголовок (убираем спецсимволы)
+        normalized_title = re.sub(r'[^\w\sа-яa-z0-9]', '', title)
+        normalized_title = re.sub(r'\s+', ' ', normalized_title).strip()
+        
+        is_duplicate = False
+        duplicate_type = None
+        matched_with = None
+        
+        # 1. Проверяем URL (самый надёжный способ)
+        if link:
+            url_hash = hashlib.md5(link.encode('utf-8')).hexdigest()
+            if url_hash in seen_urls:
                 is_duplicate = True
-                best_match = seen_data
-                best_match_type = similarity
-                break
-            elif similarity == 'medium' and best_match is None:
-                best_match = seen_data
-                best_match_type = similarity
+                duplicate_type = "URL"
+                matched_with = "тот же URL"
+        
+        # 2. Проверяем заголовок (точное совпадение)
+        if not is_duplicate and normalized_title:
+            if normalized_title in seen_titles:
+                is_duplicate = True
+                duplicate_type = "TITLE"
+                matched_with = "тот же заголовок"
+        
+        # 3. Проверяем ключевые слова (схожесть)
+        if not is_duplicate and news_key.get('words_key'):
+            words_current = set(news_key['words_key'].split('_'))
+            
+            for seen_key, seen_data in seen_keys.items():
+                words_seen = set(seen_key.split('_'))
+                
+                if words_current and words_seen:
+                    # Jaccard similarity
+                    intersection = len(words_current.intersection(words_seen))
+                    union = len(words_current.union(words_seen))
+                    similarity = intersection / union if union > 0 else 0
+                    
+                    if similarity >= 0.7:  # 70% схожести
+                        is_duplicate = True
+                        duplicate_type = "KEYWORDS"
+                        matched_with = f"схожесть {similarity:.0%}"
+                        break
         
         if is_duplicate:
             # Это дубликат!
+            logger.warning(f"⏭️ ДУБЛИКАТ ({duplicate_type}): {title[:80]}...")
+            logger.warning(f"   Причина: {matched_with}")
+            
             # Выбираем лучшую версию (с более высоким рейтингом)
-            if news_data['score'] > best_match['score']:
-                # Новая новость лучше — заменяем
-                logger.info(f" ЗАМЕНА дубликата (рейтинг {news_data['score']:.2f} > {best_match['score']:.2f}):")
-                logger.info(f"   Было: {best_match['entry'].get('title', '')[:80]}")
-                logger.info(f"   Стало: {news_data['entry'].get('title', '')[:80]}")
-                
-                # Заменяем в unique_news
+            if duplicate_type == "KEYWORDS":
                 for i, item in enumerate(unique_news):
-                    if item.get('news_id') == best_match.get('news_id'):
-                        unique_news[i] = news_data
-                        # Обновляем seen_news
-                        for j, seen in enumerate(seen_news):
-                            if seen.get('news_id') == best_match.get('news_id'):
-                                seen_news[j] = news_data
-                                break
+                    if item.get('news_id') == seen_keys.get(news_key.get('words_key', ''), {}).get('news_id'):
+                        if news_data['score'] > item['score']:
+                            logger.info(f"   ↪️ Заменяем (рейтинг {news_data['score']:.2f} > {item['score']:.2f})")
+                            unique_news[i] = news_data
                         break
-            else:
-                # Старая новость лучше — пропускаем новую
-                logger.info(f"️ ПРОПУСК дубликата (рейтинг {news_data['score']:.2f} < {best_match['score']:.2f}):")
-                logger.info(f"   Пропущено: {news_data['entry'].get('title', '')[:80]}")
         else:
             # Уникальная новость
             unique_news.append(news_data)
-            seen_news.append(news_data)
+            
+            # Сохраняем для проверки
+            if link:
+                url_hash = hashlib.md5(link.encode('utf-8')).hexdigest()
+                seen_urls.add(url_hash)
+            
+            if normalized_title:
+                seen_titles[normalized_title] = news_data
+            
+            if news_key.get('words_key'):
+                seen_keys[news_key['words_key']] = news_data
+            
+            logger.info(f"✅ Уникальная: {title[:60]}...")
     
+    logger.info(f"✨ После дедупликации: {len(unique_news)} новостей (было {len(news_list)})")
     return unique_news
     
 def fetch_and_publish():
