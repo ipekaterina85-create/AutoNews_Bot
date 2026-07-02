@@ -5,6 +5,8 @@ import re
 import logging
 import signal
 import sys
+import socket
+import ssl
 from datetime import datetime
 from pathlib import Path
 
@@ -12,6 +14,16 @@ import feedparser
 import requests
 from telebot import TeleBot
 from telebot import apihelper
+from deep_translator import GoogleTranslator
+
+# Устанавливаем timeout для всех запросов
+socket.setdefaulttimeout(30)
+
+# Отключаем строгую проверку SSL (для проблемных источников)
+try:
+    ssl._create_default_https_context = ssl._create_unverified_context
+except:
+    pass
 
 # ============================================
 # КОНФИГУРАЦИЯ
@@ -1089,49 +1101,65 @@ def fetch_and_publish():
         try:
             logger.info(f"Проверяем: {feed_info['name']}")
             
+            # Устанавливаем timeout для запроса
             feed = feedparser.parse(
                 feed_info['url'],
-                request_headers={'User-Agent': 'AutoImPulseBot/1.0'}
+                request_headers={'User-Agent': 'AutoImPulseBot/1.0'},
+                agent='AutoImPulseBot/1.0'
             )
             
+            # Проверяем ошибки парсинга
             if feed.bozo and not feed.entries:
                 logger.warning(f"❌ Ошибка RSS {feed_info['name']}: {feed.bozo_exception}")
                 failed_sources += 1
                 continue
             
-            if feed.entries:
-                working_sources += 1
-                logger.info(f"✅ {feed_info['name']}: найдено {len(feed.entries)} новостей")
+            # Проверяем, есть ли новости
+            if not feed.entries:
+                logger.warning(f"️ {feed_info['name']}: нет новостей")
+                failed_sources += 1
+                continue
             
-            for entry in feed.entries[:NEWS_PER_SOURCE]:
-                news_id = get_news_id(entry)
-                
-                if news_id in published:
+            working_sources += 1
+            logger.info(f"✅ {feed_info['name']}: найдено {len(feed.entries)} новостей")
+            
+            # Ограничиваем количество новостей с одного источника
+            entries_to_process = feed.entries[:NEWS_PER_SOURCE]
+            
+            for entry in entries_to_process:
+                try:
+                    news_id = get_news_id(entry)
+                    
+                    if news_id in published:
+                        continue
+                    
+                    score, keywords = calculate_news_score(entry, feed_info)
+                    category_id, category_info = get_news_category(entry, feed_info)
+                    
+                    all_news.append({
+                        'entry': entry,
+                        'feed_info': feed_info,
+                        'news_id': news_id,
+                        'score': score,
+                        'keywords': keywords,
+                        'category': category_info
+                    })
+                except Exception as e:
+                    logger.warning(f"⚠️ Ошибка обработки новости: {e}")
                     continue
-                
-                score, keywords = calculate_news_score(entry, feed_info)
-                category_id, category_info = get_news_category(entry, feed_info)
-                
-                all_news.append({
-                    'entry': entry,
-                    'feed_info': feed_info,
-                    'news_id': news_id,
-                    'score': score,
-                    'keywords': keywords,
-                    'category': category_info
-                })
                         
         except Exception as e:
-            logger.error(f"Ошибка {feed_info['name']}: {e}")
+            logger.error(f"❌ Ошибка {feed_info['name']}: {e}")
             failed_sources += 1
             continue
     
+    # Сортируем по рейтингу
     all_news.sort(key=lambda x: x['score'], reverse=True)
     
     logger.info(f"📊 Рабочих источников: {working_sources} | Не рабочих: {failed_sources}")
-    logger.info(f"📰 Собрано {len(all_news)} новостей")
+    logger.info(f" Собрано {len(all_news)} новостей")
     
-    # 🌐 Балансировка: не более 1/6-1/7 постов из России
+    # Балансировка: не более 1/6-1/7 постов из России
     russian_count = 0
     foreign_count = 0
     cis_count = 0
@@ -1148,7 +1176,7 @@ def fetch_and_publish():
             skipped_count += 1
             continue
         
-        # 🇷🇺 Балансировка России: 1 из 6-7 постов
+        # Балансировка России: 1 из 6-7 постов
         if is_russian:
             if foreign_count + cis_count >= russian_count * 5:
                 russian_count += 1
@@ -1156,7 +1184,7 @@ def fetch_and_publish():
                 skipped_count += 1
                 continue
         
-        # 🌐 Новости СНГ идут без ограничений (но не доминируют)
+        # Новости СНГ идут без ограничений
         if is_cis:
             cis_count += 1
         else:
@@ -1164,31 +1192,39 @@ def fetch_and_publish():
         
         published_news.append(news_data)
         
+        # Ограничение: не более 15 новостей за цикл
         if len(published_news) >= 15:
             break
     
+    logger.info(f" Отобрано {len(published_news)} новостей для публикации")
+    
     # Публикуем
     for news_data in published_news:
-        entry = news_data['entry']
-        feed_info = news_data['feed_info']
-        news_id = news_data['news_id']
-        score = news_data['score']
-        category = news_data['category']
-        
-        message, title = format_message(entry, feed_info, score, category)
-        image_url = get_image_url(entry)
-        
-        if send_news_to_channel(message, image_url):
-            save_published(news_id)
-            new_count += 1
-            country = feed_info.get('country', 'world')
-            flag = {'russia': '🇷🇺', 'belarus': '🇧🇾', 'kazakhstan': '🇰🇿',
-                    'armenia': '🇦🇲', 'azerbaijan': '🇦🇿', 'uzbekistan': '🇺🇿',
-                    'kyrgyzstan': '🇰🇬', 'moldova': '🇲🇩'}.get(country, '🌍')
-            logger.info(f"✅ [{flag}] Опубликована (рейтинг {score}): {title[:50]}...")
-            time.sleep(3)
-        else:
+        try:
+            entry = news_data['entry']
+            feed_info = news_data['feed_info']
+            news_id = news_data['news_id']
+            score = news_data['score']
+            category = news_data['category']
+            
+            message, title = format_message(entry, feed_info, score, category)
+            image_url = get_image_url(entry)
+            
+            if send_news_to_channel(message, image_url):
+                save_published(news_id)
+                new_count += 1
+                country = feed_info.get('country', 'world')
+                flag = {'russia': '🇷🇺', 'belarus': '🇧🇾', 'kazakhstan': '🇰🇿',
+                        'armenia': '🇦🇲', 'azerbaijan': '🇦🇿', 'uzbekistan': '🇿',
+                        'kyrgyzstan': '🇰🇬', 'moldova': '🇲🇩'}.get(country, '🌍')
+                logger.info(f"✅ [{flag}] Опубликована (рейтинг {score}): {title[:50]}...")
+                time.sleep(3)
+            else:
+                error_count += 1
+        except Exception as e:
+            logger.error(f"❌ Ошибка публикации: {e}")
             error_count += 1
+            continue
     
     logger.info(f"📈 Итог: ✅{new_count} | 🇷🇺{russian_count} | 🌐СНГ{cis_count} | 🌍Зарубежье{foreign_count} | ⏭️{skipped_count} | ❌{error_count}")
     return new_count, error_count
