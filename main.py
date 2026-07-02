@@ -1084,7 +1084,143 @@ def send_news_to_channel(message, image_url=None):
 # ============================================
 # ОСНОВНАЯ ЛОГИКА
 # ============================================
-
+def generate_news_key(entry):
+    """
+    Создаёт уникальный ключ новости для проверки на дубликаты.
+    Ключ основан на ключевых словах заголовка и описания.
+    """
+    title = entry.get('title', '').lower()
+    summary = entry.get('summary', '').lower()
+    
+    # Объединяем заголовок и описание
+    text = f"{title} {summary}"
+    
+    # Удаляем HTML теги
+    text = re.sub('<[^<]+?>', '', text)
+    
+    # Удаляем стоп-слова (общие слова, которые не несут смысла)
+    stop_words = {
+        'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+        'of', 'with', 'by', 'from', 'is', 'are', 'was', 'were', 'be', 'been',
+        'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would',
+        'could', 'should', 'may', 'might', 'must', 'shall', 'can', 'need',
+        'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it',
+        'we', 'they', 'what', 'which', 'who', 'when', 'where', 'why', 'how',
+        'all', 'each', 'every', 'both', 'few', 'more', 'most', 'other',
+        'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so',
+        'than', 'too', 'very', 'just', 'now', 'here', 'there', 'then',
+        'the', 'в', 'на', 'с', 'к', 'по', 'под', 'над', 'для', 'от', 'до',
+        'и', 'или', 'но', 'а', 'да', 'же', 'ли', 'бы', 'будет', 'будут',
+        'был', 'была', 'было', 'были', 'есть', 'быть', 'этот', 'эта', 'это',
+        'эти', 'тот', 'та', 'то', 'те', 'свой', 'своя', 'своё', 'свои',
+        'как', 'так', 'где', 'когда', 'почему', 'зачем', 'кто', 'что',
+        'весь', 'вся', 'всё', 'все', 'каждый', 'каждая', 'каждое', 'каждые'
+    }
+    
+    # Разбиваем на слова и убираем стоп-слова
+    words = re.findall(r'\b[a-zA-Zа-яА-Я0-9]{3,}\b', text)
+    key_words = [w for w in words if w.lower() not in stop_words]
+    
+    # Оставляем только уникальные слова (без повторов)
+    unique_words = list(dict.fromkeys(key_words))
+    
+    # Берём топ-10 самых важных слов
+    important_words = unique_words[:10]
+    
+    # Создаём ключ: сортируем слова и соединяем
+    news_key = '_'.join(sorted(important_words))
+    
+    return news_key
+    
+def calculate_key_similarity(key1, key2):
+    """
+    Вычисляет схожесть двух ключей новостей.
+    Использует Jaccard similarity (пересечение множеств слов).
+    """
+    if not key1 or not key2:
+        return 0.0
+    
+    words1 = set(key1.split('_'))
+    words2 = set(key2.split('_'))
+    
+    if not words1 or not words2:
+        return 0.0
+    
+    # Jaccard similarity: |A ∩ B| / |A ∪ B|
+    intersection = len(words1.intersection(words2))
+    union = len(words1.union(words2))
+    
+    similarity = intersection / union if union > 0 else 0.0
+    
+    return similarity
+    
+def remove_duplicates(news_list, similarity_threshold=0.7, time_window_hours=24):
+    """
+    Удаляет дубликаты новостей.
+    
+    Args:
+        news_list: список новостей
+        similarity_threshold: порог схожести (0.0-1.0)
+        time_window_hours: временное окно для проверки (часы)
+    
+    Returns:
+        список без дубликатов
+    """
+    if not news_list:
+        return news_list
+    
+    unique_news = []
+    seen_keys = {}  # news_key → (timestamp, news_data)
+    
+    # Загружаем уже опубликованные ключи за последние N часов
+    cutoff_time = time.time() - (time_window_hours * 3600)
+    
+    for news_data in news_list:
+        news_key = news_data.get('news_key', '')
+        
+        if not news_key:
+            # Если ключ не сгенерировался — добавляем как уникальную
+            unique_news.append(news_data)
+            continue
+        
+        # Проверяем, есть ли похожая новость
+        is_duplicate = False
+        best_match_score = 0
+        best_match_news = None
+        
+        for seen_key, (timestamp, existing_news) in seen_keys.items():
+            # Проверяем схожесть ключей
+            similarity = calculate_key_similarity(news_key, seen_key)
+            
+            if similarity >= similarity_threshold:
+                is_duplicate = True
+                if similarity > best_match_score:
+                    best_match_score = similarity
+                    best_match_news = existing_news
+        
+        if is_duplicate:
+            # Это дубликат!
+            # Выбираем лучшую версию (с более высоким рейтингом)
+            if news_data['score'] > best_match_news['score']:
+                # Новая новость лучше — заменяем
+                logger.info(f"🔄 Заменена дублирующаяся новость (рейтинг {news_data['score']} > {best_match_news['score']}): {news_data['entry'].get('title', '')[:50]}...")
+                # Находим и заменяем в unique_news
+                for i, item in enumerate(unique_news):
+                    if item.get('news_key') == best_match_news.get('news_key'):
+                        unique_news[i] = news_data
+                        seen_keys[news_key] = (time.time(), news_data)
+                        break
+            else:
+                # Старая новость лучше — пропускаем новую
+                logger.info(f"⏭️ Пропущен дубликат (рейтинг {news_data['score']} < {best_match_news['score']}): {news_data['entry'].get('title', '')[:50]}...")
+                skipped_count += 1
+        else:
+            # Уникальная новость
+            unique_news.append(news_data)
+            seen_keys[news_key] = (time.time(), news_data)
+    
+    return unique_news
+    
 def fetch_and_publish():
     published = load_published()
     new_count = 0
@@ -1101,32 +1237,26 @@ def fetch_and_publish():
         try:
             logger.info(f"Проверяем: {feed_info['name']}")
             
-            # Устанавливаем timeout для запроса
             feed = feedparser.parse(
                 feed_info['url'],
                 request_headers={'User-Agent': 'AutoImPulseBot/1.0'},
                 agent='AutoImPulseBot/1.0'
             )
             
-            # Проверяем ошибки парсинга
             if feed.bozo and not feed.entries:
                 logger.warning(f"❌ Ошибка RSS {feed_info['name']}: {feed.bozo_exception}")
                 failed_sources += 1
                 continue
             
-            # Проверяем, есть ли новости
             if not feed.entries:
-                logger.warning(f"️ {feed_info['name']}: нет новостей")
+                logger.warning(f"⚠️ {feed_info['name']}: нет новостей")
                 failed_sources += 1
                 continue
             
             working_sources += 1
             logger.info(f"✅ {feed_info['name']}: найдено {len(feed.entries)} новостей")
             
-            # Ограничиваем количество новостей с одного источника
-            entries_to_process = feed.entries[:NEWS_PER_SOURCE]
-            
-            for entry in entries_to_process:
+            for entry in feed.entries[:NEWS_PER_SOURCE]:
                 try:
                     news_id = get_news_id(entry)
                     
@@ -1136,10 +1266,14 @@ def fetch_and_publish():
                     score, keywords = calculate_news_score(entry, feed_info)
                     category_id, category_info = get_news_category(entry, feed_info)
                     
+                    # 🎯 ГЛАВНОЕ: Создаём уникальный ключ новости для проверки дубликатов
+                    news_key = generate_news_key(entry)
+                    
                     all_news.append({
                         'entry': entry,
                         'feed_info': feed_info,
                         'news_id': news_id,
+                        'news_key': news_key,  # Ключ для дедупликации
                         'score': score,
                         'keywords': keywords,
                         'category': category_info
@@ -1157,9 +1291,13 @@ def fetch_and_publish():
     all_news.sort(key=lambda x: x['score'], reverse=True)
     
     logger.info(f"📊 Рабочих источников: {working_sources} | Не рабочих: {failed_sources}")
-    logger.info(f" Собрано {len(all_news)} новостей")
+    logger.info(f"📰 Собрано {len(all_news)} новостей")
     
-    # Балансировка: не более 1/6-1/7 постов из России
+    # 🎯 ДЕДУПЛИКАЦИЯ: убираем дубликаты
+    all_news = remove_duplicates(all_news)
+    logger.info(f"✨ После дедупликации: {len(all_news)} уникальных новостей")
+    
+    # Балансировка
     russian_count = 0
     foreign_count = 0
     cis_count = 0
@@ -1176,7 +1314,6 @@ def fetch_and_publish():
             skipped_count += 1
             continue
         
-        # Балансировка России: 1 из 6-7 постов
         if is_russian:
             if foreign_count + cis_count >= russian_count * 5:
                 russian_count += 1
@@ -1184,7 +1321,6 @@ def fetch_and_publish():
                 skipped_count += 1
                 continue
         
-        # Новости СНГ идут без ограничений
         if is_cis:
             cis_count += 1
         else:
@@ -1192,11 +1328,10 @@ def fetch_and_publish():
         
         published_news.append(news_data)
         
-        # Ограничение: не более 15 новостей за цикл
         if len(published_news) >= 15:
             break
     
-    logger.info(f" Отобрано {len(published_news)} новостей для публикации")
+    logger.info(f"📝 Отобрано {len(published_news)} новостей для публикации")
     
     # Публикуем
     for news_data in published_news:
@@ -1215,8 +1350,8 @@ def fetch_and_publish():
                 new_count += 1
                 country = feed_info.get('country', 'world')
                 flag = {'russia': '🇷🇺', 'belarus': '🇧🇾', 'kazakhstan': '🇰🇿',
-                        'armenia': '🇦🇲', 'azerbaijan': '🇦🇿', 'uzbekistan': '🇿',
-                        'kyrgyzstan': '🇰🇬', 'moldova': '🇲🇩'}.get(country, '🌍')
+                        'armenia': '🇦🇲', 'azerbaijan': '🇦🇿', 'uzbekistan': '🇺🇿',
+                        'kyrgyzstan': '🇰', 'moldova': '🇲🇩'}.get(country, '🌍')
                 logger.info(f"✅ [{flag}] Опубликована (рейтинг {score}): {title[:50]}...")
                 time.sleep(3)
             else:
@@ -1226,9 +1361,9 @@ def fetch_and_publish():
             error_count += 1
             continue
     
-    logger.info(f"📈 Итог: ✅{new_count} | 🇷🇺{russian_count} | 🌐СНГ{cis_count} | 🌍Зарубежье{foreign_count} | ⏭️{skipped_count} | ❌{error_count}")
+    logger.info(f"📈 Итог: ✅{new_count} | 🇷{russian_count} | СНГ{cis_count} | 🌍Зарубежье{foreign_count} | ⏭️{skipped_count} | ❌{error_count}")
     return new_count, error_count
-
+    
 def send_startup_message():
     try:
         startup_message = (
