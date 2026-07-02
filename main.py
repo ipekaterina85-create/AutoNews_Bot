@@ -59,22 +59,88 @@ bot = TeleBot(BOT_TOKEN)
 apihelper.ENABLE_MIDDLEWARE = True
 
 # ============================================
-# MYMEMORY + АВТО-ГЛОССАРИЙ
+# GOOGLE TRANSLATE (КАЧЕСТВО КАК В BRAVE!)
 # ============================================
 
-class MyMemoryTranslator:
-    """Улучшенный переводчик с глоссарием авто-терминов"""
+from googletrans import Translator
+
+class GoogleTranslatorPro:
+    """Профессиональный переводчик на базе Google Translate"""
     
-    def __init__(self, email=''):
-        self.translate_url = "https://api.mymemory.translated.net/get"
-        self.email = email
+    def __init__(self):
+        self.translator = Translator()
         self.last_call_time = 0
-        self.min_interval = 1.5
+        self.min_interval = 0.3  # Google быстрый
         self.daily_chars_used = 0
-        self.daily_limit = 50000 if email else 5000
+        self.daily_limit = 1000000  # 1 млн символов/день
         
-        # 🚗 ГЛОССАРИЙ АВТОМОБИЛЬНЫХ ТЕРМИНОВ
-        self.auto_glossary = {
+    def translate(self, text, source_lang='en', target_lang='ru'):
+        """Перевод текста через Google Translate"""
+        if not text or len(text.strip()) == 0:
+            return ""
+        
+        # Если текст уже на русском — не переводим
+        if self._is_russian(text):
+            return text
+        
+        try:
+            # Проверка лимита
+            if self.daily_chars_used + len(text) > self.daily_limit:
+                logger.warning(f"⚠️ Дневной лимит Google Translate исчерпан")
+                return text
+            
+            # Защита от частых запросов
+            now = time.time()
+            if now - self.last_call_time < self.min_interval:
+                time.sleep(self.min_interval - (now - self.last_call_time))
+            
+            # Google Translate поддерживает до 15000 символов за запрос!
+            # Но для надёжности разбиваем на 5000
+            if len(text) > 4500:
+                parts = self._split_text(text, 4500)
+                translated_parts = []
+                for part in parts:
+                    translated_part = self._translate_chunk(part, source_lang, target_lang)
+                    translated_parts.append(translated_part)
+                    time.sleep(0.3)
+                result = ' '.join(translated_parts)
+            else:
+                result = self._translate_chunk(text, source_lang, target_lang)
+            
+            # Применяем глоссарий авто-терминов
+            result = self._apply_glossary(result)
+            result = self._final_cleanup(result)
+            
+            return result
+            
+        except Exception as e:
+            logger.warning(f"Ошибка Google Translate: {e}")
+            return text
+    
+    def _translate_chunk(self, text, source_lang, target_lang):
+        """Перевод одного куска"""
+        try:
+            # Определяем язык автоматически если 'auto'
+            if source_lang == 'auto':
+                result = self.translator.translate(text, dest=target_lang)
+            else:
+                result = self.translator.translate(text, src=source_lang, dest=target_lang)
+            
+            self.last_call_time = time.time()
+            self.daily_chars_used += len(text)
+            
+            return result.text if result else text
+            
+        except Exception as e:
+            logger.warning(f"Ошибка перевода куска: {e}")
+            return text
+    
+    def _apply_glossary(self, text):
+        """Применение глоссария авто-терминов (из MyMemory версии)"""
+        result = text
+        
+        # Глоссарий авто-терминов
+        auto_glossary = {
             # Критические исправления
             'самосвал': 'внедорожник',
             'самосвала': 'внедорожника',
@@ -96,70 +162,42 @@ class MyMemoryTranslator:
             'диапазона': 'запаса хода',
             'диапазоне': 'запасе хода',
             'диапазоном': 'запасом хода',
-            'диапазоны': 'запасы хода',
-            'диапазонов': 'запасов хода',
             
             'фатальную': 'смертельную',
             'фатальной': 'смертельной',
             'фатальный': 'смертельный',
             'фатальная': 'смертельная',
-            'фатальные': 'смертельные',
             
             'фунтов-футов': 'Нм',
-            'фунт-футов': 'Нм',
             'lb-ft': 'Нм',
-            'lb ft': 'Нм',
             
             'священное имя': 'легендарное имя',
             'священное название': 'легендарное название',
             
             'свободной настройке выхлопных газов': 'свободно текущей выхлопной системе',
             
-            # Технические термины
             'лошадь': 'лошадиных сил',
             'лошади': 'лошадиных сил',
             'лошадей': 'лошадиных сил',
-            'конская сила': 'лошадиная сила',
-            'конские силы': 'лошадиные силы',
-            'момент кручения': 'крутящий момент',
             
-            # Электрокары
             'подзарядка': 'зарядка',
             'подзарядки': 'зарядки',
             'подзарядку': 'зарядку',
             'батарея': 'аккумулятор',
             'батареи': 'аккумуляторы',
             'батарею': 'аккумулятор',
-            'батарее': 'аккумуляторе',
-            'батарей': 'аккумуляторов',
             
-            # Бизнес и рынок
             'дилерство': 'автосалон',
             'дилерства': 'автосалоны',
-            'дилерству': 'автосалону',
-            'производитель': 'автопроизводитель',
-            'производителя': 'автопроизводителя',
             
-            # Идиомы
             'плывя против прилива': 'идя против тренда',
             'плывет против прилива': 'идёт против тренда',
             'против прилива': 'против тренда',
-            'anti-ev': 'анти-электрического',
-            'Anti-EV': 'анти-электрического',
             
-            # Уникальные модели
             '1-из-1': 'единственный в своём роде',
             '1-of-1': 'единственный в своём роде',
             'one-of-one': 'единственный в своём роде',
-            'tags nostalgia': 'отсылает к ностальгии',
             
-            # Цены и рынок
-            'стартовая цена': 'начальная цена',
-            'базовая цена': 'начальная цена',
-            'базовая модель': 'базовая версия',
-            'топ-модель': 'топ-версия',
-            
-            # Частые ошибки MyMemory
             'разоблачил': 'представил',
             'разоблачила': 'представила',
             'разоблачено': 'представлено',
@@ -168,151 +206,27 @@ class MyMemoryTranslator:
             'раскрыто': 'представлено',
             'раскрытие': 'премьера',
             'раскрытия': 'премьеры',
-            'раскрытию': 'премьере',
-            'дебют': 'премьера',
-            'открыл': 'представил',
-            'открыла': 'представила',
-            'открыто': 'представлено',
             
-            # Страны СНГ
-            'беларусь': 'Беларусь',
-            'казахстан': 'Казахстан',
-            'узбекистан': 'Узбекистан',
-            'армения': 'Армения',
-            'азербайджан': 'Азербайджан',
-            'кыргызстан': 'Кыргызстан',
-            'молдова': 'Молдова',
-            'грузия': 'Грузия',
+            'стартовая цена': 'начальная цена',
+            'базовая цена': 'начальная цена',
         }
         
-        # Фразовые замены
-        self.phrase_replacements = [
-            ('breaks cover', 'будет представлен'),
-            ('broke cover', 'был представлен'),
-            ('ICE population', 'парк бензиновых автомобилей'),
-            ('ICE Panda', 'бензиновая Panda'),
-            ('ICE vehicles', 'автомобили с ДВС'),
-            ('family SUV', 'семейный внедорожник'),
-            ('family hauler', 'семейный внедорожник'),
-            ('fatal crash', 'смертельная авария'),
-            ('fatal accident', 'смертельная авария'),
-            ('miles range', 'миль запаса хода'),
-            ('mile range', 'миль запаса хода'),
-            ('0-60 mph', '0-100 км/ч'),
-            ('0-60mph', '0-100 км/ч'),
-            ('horsepower', 'л.с.'),
-            ('hp', 'л.с.'),
-            ('bhp', 'л.с.'),
-            ('lb-ft of torque', 'Нм крутящего момента'),
-            ('lb-ft', 'Нм'),
-            ('top speed', 'максимальная скорость'),
-            ('base price', 'начальная цена'),
-            ('starting at', 'от'),
-            ('starts at', 'от'),
-            ('starting price', 'начальная цена'),
-            ('goes on sale', 'поступит в продажу'),
-            ('on sale now', 'уже в продаже'),
-            ('available in', 'доступен в'),
-            ('unveiled', 'представлен'),
-            ('revealed', 'представлен'),
-            ('launched', 'запущен в производство'),
-            ('introduced', 'представлен'),
-            ('on the straights', 'на прямых участках трассы'),
-            ('on straights', 'на прямых'),
-            ('half a tenth', 'полдесятых секунды'),
-            ('tenths of a second', 'десятых секунды'),
-            ('swimming against the tide', 'идя против тренда'),
-            ('against the tide', 'против тренда'),
-            ('according to', 'по данным'),
-            ('spokesperson', 'представитель'),
-            ('press release', 'пресс-релиз'),
-            ('model year', 'модельный год'),
-            ('new generation', 'новое поколение'),
-            ('next generation', 'следующее поколение'),
-            ('all-electric', 'полностью электрический'),
-            ('plug-in hybrid', 'подключаемый гибрид'),
-            ('mild hybrid', 'мягкий гибрид'),
-            ('free-flowing exhaust', 'свободно текущая выхлопная система'),
-        ]
-    
-    def translate(self, text, source_lang='en', target_lang='ru'):
-        if not text or len(text.strip()) == 0:
-            return ""
-        if self._is_russian(text):
-            return text
-        try:
-            if self.daily_chars_used + len(text) > self.daily_limit:
-                logger.warning(f"⚠️ Дневной лимит MyMemory исчерпан")
-                return text
-            
-            now = time.time()
-            if now - self.last_call_time < self.min_interval:
-                time.sleep(self.min_interval - (now - self.last_call_time))
-            
-            if len(text) > 450:
-                parts = self._split_text(text, 450)
-                translated_parts = []
-                for part in parts:
-                    translated_part = self._translate_with_postprocess(part, source_lang, target_lang)
-                    translated_parts.append(translated_part)
-                    time.sleep(0.5)
-                result = ' '.join(translated_parts)
-            else:
-                result = self._translate_with_postprocess(text, source_lang, target_lang)
-            
-            return result
-        except Exception as e:
-            logger.warning(f"Ошибка MyMemory: {e}")
-            return text
-    
-    def _translate_with_postprocess(self, text, source_lang, target_lang):
-        translated = self._translate_chunk(text, source_lang, target_lang)
-        translated = self._apply_glossary(translated)
-        translated = self._final_cleanup(translated)
-        return translated
-    
-    def _translate_chunk(self, text, source_lang, target_lang):
-        params = {
-            'q': text,
-            'langpair': f'{source_lang}|{target_lang}',
-            'de': self.email if self.email else 'autoimpulse@mymemory.com'
-        }
-        response = requests.get(self.translate_url, params=params, timeout=15)
-        response.raise_for_status()
-        result = response.json()
+        # Сортируем по длине (длинные фразы заменяем первыми)
+        sorted_terms = sorted(auto_glossary.items(), key=lambda x: len(x[0]), reverse=True)
         
-        if 'responseStatus' in result and result['responseStatus'] == 200:
-            if 'responseData' in result and result['responseData']:
-                translated = result['responseData']['translatedText']
-                self.last_call_time = time.time()
-                self.daily_chars_used += len(text)
-                return translated
-        
-        if 'matches' in result and result['matches']:
-            best_match = max(result['matches'], key=lambda x: x.get('match', 0))
-            if best_match.get('match', 0) > 0.5:
-                translated = best_match.get('translation', text)
-                self.last_call_time = time.time()
-                self.daily_chars_used += len(text)
-                return translated
-        
-        return text
-    
-    def _apply_glossary(self, text):
-        result = text
-        sorted_terms = sorted(self.auto_glossary.items(), key=lambda x: len(x[0]), reverse=True)
         for wrong, correct in sorted_terms:
             pattern = r'\b' + re.escape(wrong) + r'\b'
             result = re.sub(pattern, correct, result, flags=re.IGNORECASE)
+        
         return result
     
     def _final_cleanup(self, text):
+        """Финальная очистка перевода"""
         text = re.sub(r'\s+', ' ', text)
         text = re.sub(r'\s+([.,!?;:])', r'\1', text)
         text = re.sub(r'\. ([а-я])', lambda m: '. ' + m.group(1).upper(), text)
         if text and text[0].islower():
             text = text[0].upper() + text[1:]
-        # Убираем обрезанные слова в конце
         if text.endswith('-') or text.endswith('...'):
             words = text.split()
             if len(words) > 1:
@@ -321,9 +235,11 @@ class MyMemoryTranslator:
         return text.strip()
     
     def _split_text(self, text, max_length):
+        """Разбиение текста на части по предложениям"""
         sentences = re.split(r'(?<=[.!?])\s+', text)
         parts = []
         current_part = ""
+        
         for sentence in sentences:
             if len(current_part) + len(sentence) + 1 <= max_length:
                 current_part = current_part + " " + sentence if current_part else sentence
@@ -331,11 +247,14 @@ class MyMemoryTranslator:
                 if current_part:
                     parts.append(current_part)
                 current_part = sentence
+        
         if current_part:
             parts.append(current_part)
+        
         return parts if parts else [text[:max_length]]
     
     def _is_russian(self, text):
+        """Проверка, что текст на русском"""
         if not text:
             return False
         cyrillic = sum(1 for c in text if 'а' <= c.lower() <= 'я')
@@ -352,23 +271,27 @@ translator = None
 
 if ENABLE_TRANSLATION:
     try:
-        translator = MyMemoryTranslator(email=MYMEMORY_EMAIL)
+        translator = GoogleTranslatorPro()
+        
+        # Тестовые переводы
         tests = [
             ("Tesla unveiled new Model S with 500 miles range", "Tesla"),
             ("The car has 450 horsepower and 600 lb-ft of torque", "Мощность"),
             ("BMW recalls 10000 vehicles due to battery issue", "Отзыв"),
             ("Family SUV with 300 miles range breaks cover", "Внедорожник"),
+            ("Mate Rimac unveils 1-of-1 Bugatti Mistral Blanc", "Люкс"),
         ]
-        logger.info(f"✅ MyMemory Translator инициализирован")
-        if MYMEMORY_EMAIL:
-            logger.info(f"📧 Email: {MYMEMORY_EMAIL} (лимит 50000 символов/день)")
-        logger.info(f"🧪 Тесты перевода:")
+        
+        logger.info(f"✅ Google Translator Pro инициализирован")
+        logger.info(f"🧪 Тесты перевода (качество как в Brave!):")
         for en_text, hint in tests:
             ru_text = translator.translate(en_text, "en", "ru")
             logger.info(f"   EN: {en_text}")
             logger.info(f"   RU: {ru_text}")
+            logger.info("")
+        
     except Exception as e:
-        logger.error(f"❌ Ошибка инициализации MyMemory: {e}")
+        logger.error(f"❌ Ошибка инициализации Google Translator: {e}")
         translator = None
         ENABLE_TRANSLATION = False
 else:
