@@ -1479,15 +1479,16 @@ def fetch_and_publish():
             image_url = get_image_url(entry)
             
             if send_news_to_channel(message, image_url):
-    # Получаем нормализованный заголовок
-    news_key = news_data.get('news_key', {})
-    normalized_title = news_key.get('normalized_title', '')
-    save_published(news_id, normalized_title)
+                # Получаем нормализованный заголовок
+                news_key = news_data.get('news_key', {})
+                normalized_title = news_key.get('normalized_title', '')
+                save_published(news_id, normalized_title)
+                
                 new_count += 1
                 country = feed_info.get('country', 'world')
                 flag = {'russia': '🇷🇺', 'belarus': '🇧🇾', 'kazakhstan': '🇰🇿',
                         'armenia': '🇦🇲', 'azerbaijan': '🇦🇿', 'uzbekistan': '🇺🇿',
-                        'kyrgyzstan': '🇰🇬', 'moldova': '🇩'}.get(country, '')
+                        'kyrgyzstan': '🇰🇬', 'moldova': '🇲🇩'}.get(country, '')
                 source_name = feed_info.get('name', 'Unknown')
                 logger.info(f"✅ [{flag}] {source_name} (рейтинг {score:.2f}): {title[:50]}...")
                 time.sleep(3)
@@ -1498,7 +1499,7 @@ def fetch_and_publish():
             error_count += 1
             continue
     
-    logger.info(f" Итог: ✅{new_count} | 🇷🇺{russian_count} | СНГ{cis_count} | 🌍{foreign_count} | ⏭️{skipped_count} | ❌{error_count}")
+    logger.info(f"📈 Итог: ✅{new_count} | 🇷🇺{russian_count} | СНГ{cis_count} | 🌍{foreign_count} | ⏭️{skipped_count} | ❌{error_count}")
     return new_count, error_count
     
 def send_startup_message():
