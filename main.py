@@ -40,7 +40,9 @@ ENABLE_IMAGES = os.environ.get('ENABLE_IMAGES', 'true').lower() == 'true'
 ENABLE_HASHTAGS = os.environ.get('ENABLE_HASHTAGS', 'true').lower() == 'true'
 MIN_SCORE = int(os.environ.get('MIN_SCORE', 3))
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
-MYMEMORY_EMAIL = os.environ.get('MYMEMORY_EMAIL', '')
+
+# 🏁 ЛИМИТ СПОРТИВНЫХ НОВОСТЕЙ
+MOTORSPORT_DAILY_LIMIT = int(os.environ.get('MOTORSPORT_DAILY_LIMIT', 5))
 
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN не установлен!")
@@ -71,7 +73,7 @@ bot = TeleBot(BOT_TOKEN)
 apihelper.ENABLE_MIDDLEWARE = True
 
 # ============================================
-# GOOGLE TRANSLATE через deep-translator (качество как в Brave!)
+# GOOGLE TRANSLATE через deep-translator
 # ============================================
 
 from deep_translator import GoogleTranslator
@@ -82,13 +84,11 @@ class GoogleTranslatorPro:
     def __init__(self):
         self.translator = GoogleTranslator(source='auto', target='ru')
         self.last_call_time = 0
-        self.min_interval = 0.3  # Google быстрый
+        self.min_interval = 0.3
         self.daily_chars_used = 0
-        self.daily_limit = 1000000  # 1 млн символов/день
+        self.daily_limit = 1000000
         
-        # Глоссарий авто-терминов (для пост-обработки)
         self.auto_glossary = {
-            # Критические исправления
             'самосвал': 'внедорожник',
             'самосвала': 'внедорожника',
             'самосвалу': 'внедорожнику',
@@ -96,45 +96,36 @@ class GoogleTranslatorPro:
             'самосвале': 'внедорожнике',
             'самосвалы': 'внедорожники',
             'самосвалов': 'внедорожников',
-            
             'ледяных': 'бензиновых',
             'ледяной': 'бензиновой',
             'ледяные': 'бензиновые',
-            
             'сломает крышку': 'будет представлен',
             'сломала крышку': 'была представлена',
             'сломало крышку': 'было представлено',
-            
             'диапазон': 'запас хода',
             'диапазона': 'запаса хода',
             'диапазоне': 'запасе хода',
             'диапазоном': 'запасом хода',
             'диапазоны': 'запасы хода',
             'диапазонов': 'запасов хода',
-            
             'фатальную': 'смертельную',
             'фатальной': 'смертельной',
             'фатальный': 'смертельный',
             'фатальная': 'смертельная',
             'фатальные': 'смертельные',
-            
             'фунтов-футов': 'Нм',
             'фунт-футов': 'Нм',
             'lb-ft': 'Нм',
             'lb ft': 'Нм',
-            
             'священное имя': 'легендарное имя',
             'священное название': 'легендарное название',
-            
             'свободной настройке выхлопных газов': 'свободно текущей выхлопной системе',
             'свободная настройка выхлопных газов': 'свободно текущая выхлопная система',
-            
             'лошадь': 'лошадиных сил',
             'лошади': 'лошадиных сил',
             'лошадей': 'лошадиных сил',
             'конская сила': 'лошадиная сила',
             'конские силы': 'лошадиные силы',
-            
             'подзарядка': 'зарядка',
             'подзарядки': 'зарядки',
             'подзарядку': 'зарядку',
@@ -143,29 +134,24 @@ class GoogleTranslatorPro:
             'батарею': 'аккумулятор',
             'батарее': 'аккумуляторе',
             'батарей': 'аккумуляторов',
-            
             'дилерство': 'автосалон',
             'дилерства': 'автосалоны',
             'дилерству': 'автосалону',
             'производитель': 'автопроизводитель',
             'производителя': 'автопроизводителя',
-            
             'плывя против прилива': 'идя против тренда',
             'плывет против прилива': 'идёт против тренда',
             'против прилива': 'против тренда',
             'anti-ev': 'анти-электрического',
             'Anti-EV': 'анти-электрического',
-            
             '1-из-1': 'единственный в своём роде',
             '1-of-1': 'единственный в своём роде',
             'one-of-one': 'единственный в своём роде',
             'tags nostalgia': 'отсылает к ностальгии',
-            
             'стартовая цена': 'начальная цена',
             'базовая цена': 'начальная цена',
             'базовая модель': 'базовая версия',
             'топ-модель': 'топ-версия',
-            
             'разоблачил': 'представил',
             'разоблачила': 'представила',
             'разоблачено': 'представлено',
@@ -179,16 +165,13 @@ class GoogleTranslatorPro:
             'открыл': 'представил',
             'открыла': 'представила',
             'открыто': 'представлено',
-            
             'юбилейной отделке': 'юбилейной версии',
             'юбилейная отделка': 'юбилейная версия',
             'первую серийную': 'первый серийный',
-            
             'anti-ev tide': 'тренда против электромобилей',
             'against the tide': 'против тренда',
         }
         
-        # Фразовые замены (до перевода)
         self.phrase_replacements = [
             ('breaks cover', 'будет представлен'),
             ('broke cover', 'был представлен'),
@@ -241,26 +224,17 @@ class GoogleTranslatorPro:
         ]
         
     def translate(self, text, source_lang='en', target_lang='ru'):
-        """Перевод текста через Google Translate"""
         if not text or len(text.strip()) == 0:
             return ""
-        
-        # Если текст уже на русском — не переводим
         if self._is_russian(text):
             return text
-        
         try:
-            # Проверка лимита
             if self.daily_chars_used + len(text) > self.daily_limit:
                 logger.warning(f"⚠️ Дневной лимит Google Translate исчерпан")
                 return text
-            
-            # Защита от частых запросов
             now = time.time()
             if now - self.last_call_time < self.min_interval:
                 time.sleep(self.min_interval - (now - self.last_call_time))
-            
-            # Google Translate поддерживает до 5000 символов за запрос
             if len(text) > 4500:
                 parts = self._split_text(text, 4500)
                 translated_parts = []
@@ -271,16 +245,12 @@ class GoogleTranslatorPro:
                 result = ' '.join(translated_parts)
             else:
                 result = self._translate_with_postprocess(text, source_lang, target_lang)
-            
             return result
-            
         except Exception as e:
             logger.warning(f"Ошибка Google Translate: {e}")
             return text
     
     def _translate_with_postprocess(self, text, source_lang, target_lang):
-        """Перевод с пост-обработкой"""
-        # Применяем фразовые замены до перевода
         processed_text = text
         for eng_phrase, rus_phrase in self.phrase_replacements:
             if eng_phrase.lower() in processed_text.lower():
@@ -290,20 +260,12 @@ class GoogleTranslatorPro:
                     processed_text, 
                     flags=re.IGNORECASE
                 )
-        
-        # Переводим через Google Translate
         translated = self._translate_chunk(processed_text, source_lang, target_lang)
-        
-        # Применяем глоссарий после перевода
         translated = self._apply_glossary(translated)
-        
-        # Финальная очистка
         translated = self._final_cleanup(translated)
-        
         return translated
     
     def _translate_chunk(self, text, source_lang, target_lang):
-        """Перевод одного куска через Google Translate"""
         try:
             result = self.translator.translate(text)
             self.last_call_time = time.time()
@@ -314,24 +276,19 @@ class GoogleTranslatorPro:
             return text
     
     def _apply_glossary(self, text):
-        """Применение глоссария авто-терминов"""
         result = text
         sorted_terms = sorted(self.auto_glossary.items(), key=lambda x: len(x[0]), reverse=True)
-        
         for wrong, correct in sorted_terms:
             pattern = r'\b' + re.escape(wrong) + r'\b'
             result = re.sub(pattern, correct, result, flags=re.IGNORECASE)
-        
         return result
     
     def _final_cleanup(self, text):
-        """Финальная очистка перевода"""
         text = re.sub(r'\s+', ' ', text)
         text = re.sub(r'\s+([.,!?;:])', r'\1', text)
         text = re.sub(r'\. ([а-я])', lambda m: '. ' + m.group(1).upper(), text)
         if text and text[0].islower():
             text = text[0].upper() + text[1:]
-        # Убираем обрезанные слова в конце
         if text.endswith('-') or text.endswith('...'):
             words = text.split()
             if len(words) > 1:
@@ -340,11 +297,9 @@ class GoogleTranslatorPro:
         return text.strip()
     
     def _split_text(self, text, max_length):
-        """Разбиение текста на части по предложениям"""
         sentences = re.split(r'(?<=[.!?])\s+', text)
         parts = []
         current_part = ""
-        
         for sentence in sentences:
             if len(current_part) + len(sentence) + 1 <= max_length:
                 current_part = current_part + " " + sentence if current_part else sentence
@@ -352,14 +307,11 @@ class GoogleTranslatorPro:
                 if current_part:
                     parts.append(current_part)
                 current_part = sentence
-        
         if current_part:
             parts.append(current_part)
-        
         return parts if parts else [text[:max_length]]
     
     def _is_russian(self, text):
-        """Проверка, что текст на русском"""
         if not text:
             return False
         cyrillic = sum(1 for c in text if 'а' <= c.lower() <= 'я')
@@ -368,17 +320,11 @@ class GoogleTranslatorPro:
             return False
         return (cyrillic / letters) > 0.5
 
-# ============================================
-# ИНИЦИАЛИЗАЦИЯ ПЕРЕВОДЧИКА
-# ============================================
-
 translator = None
 
 if ENABLE_TRANSLATION:
     try:
         translator = GoogleTranslatorPro()
-        
-        # Тестовые переводы
         tests = [
             ("Tesla unveiled new Model S with 500 miles range", "Tesla"),
             ("The car has 450 horsepower and 600 lb-ft of torque", "Мощность"),
@@ -386,28 +332,26 @@ if ENABLE_TRANSLATION:
             ("Family SUV with 300 miles range breaks cover", "Внедорожник"),
             ("Mate Rimac unveils 1-of-1 Bugatti Mistral Blanc", "Люкс"),
         ]
-        
-        logger.info(f"✅ Google Translator Pro инициализирован (качество как в Brave!)")
+        logger.info(f"✅ Google Translator Pro инициализирован")
         logger.info(f"🧪 Тесты перевода:")
         for en_text, hint in tests:
             ru_text = translator.translate(en_text, "en", "ru")
             logger.info(f"   EN: {en_text}")
             logger.info(f"   RU: {ru_text}")
             logger.info("")
-        
     except Exception as e:
-        logger.error(f" Ошибка инициализации Google Translator: {e}")
+        logger.error(f"❌ Ошибка инициализации Google Translator: {e}")
         translator = None
         ENABLE_TRANSLATION = False
 else:
     logger.info("Перевод отключён")
 
 # ============================================
-# ВСЕ RSS-ИСТОЧНИКИ (СНГ + ЕАЭС + ЗАРУБЕЖЬЕ)
+# ВСЕ RSS-ИСТОЧНИКИ
 # ============================================
 
 RSS_FEEDS = [
-    # 🇷🇺 РОССИЯ (проверенные рабочие)
+    # 🇷🇺 РОССИЯ
     {
         'name': 'Дром',
         'url': 'https://www.drom.ru/export/xml/news.rss',
@@ -432,7 +376,7 @@ RSS_FEEDS = [
         'name': 'Автостат',
         'url': 'https://www.autostat.ru/news/rss/',
         'lang': 'ru',
-        'region': '🇷🇺',
+        'region': '🇺',
         'country': 'russia',
         'priority': 'medium',
         'weight': 1.5,
@@ -442,7 +386,7 @@ RSS_FEEDS = [
         'name': 'Коммерсантъ Автопилот',
         'url': 'https://www.kommersant.ru/RSS/auto.xml',
         'lang': 'ru',
-        'region': '🇷🇺',
+        'region': '🇺',
         'country': 'russia',
         'priority': 'medium',
         'weight': 1.5,
@@ -454,7 +398,7 @@ RSS_FEEDS = [
         'name': 'Onliner Авто (Беларусь)',
         'url': 'https://auto.onliner.by/feed',
         'lang': 'ru',
-        'region': '🇧🇾',
+        'region': '🇾',
         'country': 'belarus',
         'priority': 'high',
         'weight': 1.8,
@@ -496,7 +440,7 @@ RSS_FEEDS = [
         'name': 'Krisha (Казахстан)',
         'url': 'https://krisha.kz/rss/',
         'lang': 'ru',
-        'region': '🇰🇿',
+        'region': '🇰',
         'country': 'kazakhstan',
         'priority': 'high',
         'weight': 1.8,
@@ -515,7 +459,7 @@ RSS_FEEDS = [
         'category': 'cis'
     },
     
-    # 🇦🇿 АЗЕРБАЙДЖАН
+    # 🇦 АЗЕРБАЙДЖАН
     {
         'name': '1news.az Авто (Азербайджан)',
         'url': 'https://1news.az/rss.php?lang=ru&cat=auto',
@@ -532,7 +476,7 @@ RSS_FEEDS = [
         'name': 'Kun.uz Авто (Узбекистан)',
         'url': 'https://kun.uz/ru/news/rss?category=auto',
         'lang': 'ru',
-        'region': '🇺🇿',
+        'region': '🇿',
         'country': 'uzbekistan',
         'priority': 'medium',
         'weight': 1.3,
@@ -556,7 +500,7 @@ RSS_FEEDS = [
         'name': 'Auto.MD (Молдова)',
         'url': 'https://auto.md/feed/',
         'lang': 'ru',
-        'region': '🇲🇩',
+        'region': '🇩',
         'country': 'moldova',
         'priority': 'medium',
         'weight': 1.3,
@@ -577,7 +521,7 @@ RSS_FEEDS = [
         'name': 'Auto Express',
         'url': 'https://www.autoexpress.co.uk/rss',
         'lang': 'en',
-        'region': '🇬🇧',
+        'region': '🇧',
         'country': 'uk',
         'priority': 'medium',
         'weight': 1
@@ -636,7 +580,7 @@ RSS_FEEDS = [
         'name': 'CleanTechnica',
         'url': 'https://cleantechnica.com/feed/',
         'lang': 'en',
-        'region': '🌍',
+        'region': '',
         'country': 'world',
         'priority': 'high',
         'category': 'electric',
@@ -653,7 +597,7 @@ RSS_FEEDS = [
         'weight': 2
     },
     
-    # 🏁 АВТОСПОРТ
+    # 🏁 АВТОСПОРТ (ЛИМИТ: 5 новостей в сутки)
     {
         'name': 'Autosport',
         'url': 'https://www.autosport.com/rss/feed/all',
@@ -662,7 +606,8 @@ RSS_FEEDS = [
         'country': 'world',
         'priority': 'medium',
         'category': 'motorsport',
-        'weight': 1.5
+        'weight': 1.0,
+        'max_per_cycle': 2
     },
     {
         'name': 'Crash.net',
@@ -672,7 +617,8 @@ RSS_FEEDS = [
         'country': 'world',
         'priority': 'medium',
         'category': 'motorsport',
-        'weight': 1.5
+        'weight': 1.0,
+        'max_per_cycle': 2
     },
     
     # 💎 ЛЮКС
@@ -692,7 +638,7 @@ RSS_FEEDS = [
         'name': 'CNBC Autos',
         'url': 'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=15837362',
         'lang': 'en',
-        'region': '🇺🇸',
+        'region': '🇺',
         'country': 'usa',
         'priority': 'high',
         'weight': 1.5
@@ -743,9 +689,19 @@ HOT_KEYWORDS = {
     'unveiled': 2, 'revealed': 2, 'launch': 2, 'debut': 2, 'premiere': 2,
     'concept': 2, 'prototype': 2, 'new model': 2,
     
-    # Автоспорт
-    'f1': 2, 'formula 1': 2, 'wrc': 2, 'le mans': 2, 'championship': 2,
-    'victory': 2, 'record': 2,
+    # Автоспорт (СНИЖЕННЫЕ ВЕСА)
+    'f1': 1,
+    'formula 1': 1,
+    'wrc': 1,
+    'le mans': 1,
+    'championship': 1,
+    'victory': 1,
+    'race': 0.5,
+    'racing': 0.5,
+    'moto': 0.5,
+    'motogp': 0.5,
+    'grand prix': 1,
+    'podium': 0.5,
     
     # Скандалы
     'recall': 2, 'crash': 2, 'accident': 2, 'bankrupt': 3, 'scandal': 3,
@@ -779,7 +735,7 @@ CATEGORIES = {
         'name': 'Электрокары'
     },
     'motorsport': {
-        'keywords': ['f1', 'formula', 'race', 'racing', 'wrc', 'гонк', 'чемпионат', 'формула', 'ф1'],
+        'keywords': ['f1', 'formula', 'race', 'racing', 'wrc', 'гонк', 'чемпионат', 'формула', 'ф1', 'motogp', 'grand prix', 'podium'],
         'emoji': '🏁',
         'name': 'Автоспорт'
     },
@@ -796,7 +752,6 @@ CATEGORIES = {
 }
 
 def calculate_news_score(entry, feed_info):
-    """Рассчитывает рейтинг новости"""
     title = entry.get('title', '').lower()
     summary = entry.get('summary', '').lower()
     text = f"{title} {summary}"
@@ -822,11 +777,9 @@ def calculate_news_score(entry, feed_info):
     if 20 < len(entry.get('title', '')) < 100:
         score += 0.5
     
-    # 🇷🇺 Мягкая корректировка для российских новостей (чтобы не доминировали)
     if feed_info.get('country') == 'russia':
         score *= 1.1
     
-    # 🌐 Бонус для новостей СНГ (поддерживаем регион)
     if feed_info.get('country') in ['belarus', 'kazakhstan', 'armenia', 'azerbaijan', 
                                      'uzbekistan', 'kyrgyzstan', 'moldova']:
         score *= 1.1
@@ -834,20 +787,16 @@ def calculate_news_score(entry, feed_info):
     return round(score, 2), matched_keywords
 
 def get_news_category(entry, feed_info):
-    """Определяет категорию новости"""
     title = entry.get('title', '').lower()
     summary = entry.get('summary', '').lower()
     text = f"{title} {summary}"
     
-    # Сначала проверяем по источнику
     if 'category' in feed_info:
         cat_id = feed_info['category']
         if cat_id in CATEGORIES:
-            # Для России и СНГ — всегда показываем соответствующую категорию
             if cat_id in ['russia', 'cis']:
                 return cat_id, CATEGORIES[cat_id]
     
-    # Затем по ключевым словам
     for cat_id, cat_info in CATEGORIES.items():
         for keyword in cat_info['keywords']:
             if keyword in text:
@@ -856,46 +805,10 @@ def get_news_category(entry, feed_info):
     return 'general', {'emoji': '🚗', 'name': 'Новости'}
 
 # ============================================
-# ХРАНИЛИЩЕ
+# ХРАНИЛИЩЕ ОПУБЛИКОВАННЫХ НОВОСТЕЙ
 # ============================================
 
 PUBLISHED_FILE = 'published_news.txt'
-# Хранилище для проверки дубликатов (нормализованные заголовки)
-DUPLICATES_FILE = 'published_titles.txt'
-MAX_DUPLICATES_HISTORY = 5000  # Храним последние 5000 заголовков
-
-def load_published_titles():
-    """Загружает нормализованные заголовки опубликованных новостей"""
-    if os.path.exists(DUPLICATES_FILE):
-        try:
-            with open(DUPLICATES_FILE, 'r', encoding='utf-8') as f:
-                return set(line.strip() for line in f if line.strip())
-        except Exception as e:
-            logger.error(f"Ошибка загрузки заголовков: {e}")
-            return set()
-    return set()
-
-def save_published_title(normalized_title):
-    """Сохраняет нормализованный заголовок"""
-    try:
-        with open(DUPLICATES_FILE, 'a', encoding='utf-8') as f:
-            f.write(f"{normalized_title}\n")
-        cleanup_duplicates_file()
-    except Exception as e:
-        logger.error(f"Ошибка сохранения заголовка: {e}")
-
-def cleanup_duplicates_file():
-    """Очищает файл дубликатов, оставляя последние N записей"""
-    try:
-        if not os.path.exists(DUPLICATES_FILE):
-            return
-        with open(DUPLICATES_FILE, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-        if len(lines) > MAX_DUPLICATES_HISTORY:
-            with open(DUPLICATES_FILE, 'w', encoding='utf-8') as f:
-                f.writelines(lines[-MAX_DUPLICATES_HISTORY:])
-    except Exception as e:
-        logger.error(f"Ошибка очистки файла дубликатов: {e}")
 MAX_PUBLISHED_HISTORY = 10000
 
 def load_published():
@@ -909,15 +822,11 @@ def load_published():
     return set()
 
 def save_published(news_id, normalized_title=None):
-    """Сохраняет ID новости и нормализованный заголовок"""
     try:
         with open(PUBLISHED_FILE, 'a', encoding='utf-8') as f:
             f.write(f"{news_id}\n")
-        
-        # Сохраняем заголовок для дедупликации
         if normalized_title:
             save_published_title(normalized_title)
-        
         cleanup_published_file()
     except Exception as e:
         logger.error(f"Ошибка сохранения: {e}")
@@ -933,6 +842,90 @@ def cleanup_published_file():
                 f.writelines(lines[-MAX_PUBLISHED_HISTORY:])
     except Exception as e:
         logger.error(f"Ошибка очистки: {e}")
+
+# ============================================
+# ХРАНИЛИЩЕ ДЛЯ ДЕДУПЛИКАЦИИ (МЕЖЦИКЛОВОЕ)
+# ============================================
+
+DUPLICATES_FILE = 'published_titles.txt'
+MAX_DUPLICATES_HISTORY = 5000
+
+def load_published_titles():
+    if os.path.exists(DUPLICATES_FILE):
+        try:
+            with open(DUPLICATES_FILE, 'r', encoding='utf-8') as f:
+                return set(line.strip() for line in f if line.strip())
+        except Exception as e:
+            logger.error(f"Ошибка загрузки заголовков: {e}")
+            return set()
+    return set()
+
+def save_published_title(normalized_title):
+    try:
+        with open(DUPLICATES_FILE, 'a', encoding='utf-8') as f:
+            f.write(f"{normalized_title}\n")
+        cleanup_duplicates_file()
+    except Exception as e:
+        logger.error(f"Ошибка сохранения заголовка: {e}")
+
+def cleanup_duplicates_file():
+    try:
+        if not os.path.exists(DUPLICATES_FILE):
+            return
+        with open(DUPLICATES_FILE, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        if len(lines) > MAX_DUPLICATES_HISTORY:
+            with open(DUPLICATES_FILE, 'w', encoding='utf-8') as f:
+                f.writelines(lines[-MAX_DUPLICATES_HISTORY:])
+    except Exception as e:
+        logger.error(f"Ошибка очистки файла дубликатов: {e}")
+
+# ============================================
+# СЧЁТЧИК СПОРТИВНЫХ НОВОСТЕЙ (5 В СУТКИ)
+# ============================================
+
+MOTORSPORT_COUNT_FILE = 'motorsport_daily_count.txt'
+
+def get_today_str():
+    """Возвращает сегодняшнюю дату в формате YYYY-MM-DD"""
+    return datetime.now().strftime('%Y-%m-%d')
+
+def load_motorsport_count():
+    """Загружает счётчик спортивных новостей за сегодня"""
+    today = get_today_str()
+    if os.path.exists(MOTORSPORT_COUNT_FILE):
+        try:
+            with open(MOTORSPORT_COUNT_FILE, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+                if content:
+                    parts = content.split(' ')
+                    if len(parts) == 2 and parts[0] == today:
+                        return int(parts[1])
+        except Exception as e:
+            logger.error(f"Ошибка загрузки счётчика спорта: {e}")
+    return 0
+
+def save_motorsport_count(count):
+    """Сохраняет счётчик спортивных новостей"""
+    today = get_today_str()
+    try:
+        with open(MOTORSPORT_COUNT_FILE, 'w', encoding='utf-8') as f:
+            f.write(f"{today} {count}")
+    except Exception as e:
+        logger.error(f"Ошибка сохранения счётчика спорта: {e}")
+
+def increment_motorsport_count():
+    """Увеличивает счётчик на 1 и возвращает новое значение"""
+    current = load_motorsport_count()
+    new_count = current + 1
+    save_motorsport_count(new_count)
+    return new_count
+
+def get_motorsport_remaining():
+    """Возвращает количество оставшихся слотов для спортивных новостей"""
+    current = load_motorsport_count()
+    remaining = MOTORSPORT_DAILY_LIMIT - current
+    return max(0, remaining)
 
 # ============================================
 # УТИЛИТЫ
@@ -1039,7 +1032,6 @@ def generate_hashtags(entry, feed_info):
     return ' '.join(tags[:5])
 
 def format_message(entry, feed_info, score, category):
-    """Форматирование сообщения для Telegram"""
     original_title = entry.get('title', 'Без названия')
     link = entry.get('link', '')
     original_summary = entry.get('summary', '')
@@ -1064,7 +1056,7 @@ def format_message(entry, feed_info, score, category):
     cat_name = category['name']
     
     if score >= 7:
-        hot_indicator = "🔥🔥🔥 *ГОРЯЧАЯ НОВОСТЬ*\n\n"
+        hot_indicator = "🔥🔥 *ГОРЯЧАЯ НОВОСТЬ*\n\n"
     elif score >= 5:
         hot_indicator = "🔥🔥 *ТОП*\n\n"
     elif score >= 3:
@@ -1079,7 +1071,7 @@ def format_message(entry, feed_info, score, category):
         message += f"{translated_summary}\n\n"
     
     message += "━━━━━━━━━━━━━━━━━━━\n"
-    message += f"📊 Рейтинг: {score}/10\n"
+    message += f" Рейтинг: {score}/10\n"
     message += f"📰 Источник: {source_name} {region}\n"
     message += f"🏷️ Категория: {cat_name}\n"
     message += f"\n🔗 [Читать полностью]({link})\n\n"
@@ -1091,7 +1083,6 @@ def format_message(entry, feed_info, score, category):
     return message, translated_title
 
 def send_news_to_channel(message, image_url=None):
-    """Отправка новости в канал с обработкой ошибок"""
     try:
         if image_url and ENABLE_IMAGES:
             try:
@@ -1103,7 +1094,7 @@ def send_news_to_channel(message, image_url=None):
                 )
                 return True
             except Exception as img_error:
-                logger.warning(f"⚠️ Не удалось отправить изображение, отправляем без него")
+                logger.warning(f"⚠️ Не удалось отправить изображение")
                 bot.send_message(
                     CHANNEL_ID,
                     message,
@@ -1124,29 +1115,23 @@ def send_news_to_channel(message, image_url=None):
         return False
 
 # ============================================
-# ОСНОВНАЯ ЛОГИКА
+# ДЕДУПЛИКАЦИЯ
 # ============================================
+
 def generate_news_key(entry):
-    """
-    Создаёт уникальный ключ новости с УЛУЧШЕННОЙ логикой.
-    """
     title = entry.get('title', '').lower().strip()
     link = entry.get('link', '').strip()
     summary = entry.get('summary', '').lower()
     
-    # 1. Создаём ключ из URL
     url_key = hashlib.md5(link.encode('utf-8')).hexdigest() if link else ''
     
-    # 2. Создаём ключ из заголовка (нормализованного)
     normalized_title = re.sub(r'[^\w\sа-яa-z0-9]', '', title)
     normalized_title = re.sub(r'\s+', ' ', normalized_title).strip()
     title_key = hashlib.md5(normalized_title.encode('utf-8')).hexdigest()
     
-    # 3. Извлекаем ключевые слова (только важные)
     text = f"{title} {summary}"
     text = re.sub('<[^<]+?>', '', text)
     
-    # Стоп-слова (расширенные)
     stop_words = {
         'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
         'of', 'with', 'by', 'from', 'is', 'are', 'was', 'were', 'be', 'been',
@@ -1157,15 +1142,11 @@ def generate_news_key(entry):
         'фото', 'фотографии', 'обзор', 'представлен', 'представлена'
     }
     
-    # Извлекаем слова (минимум 4 буквы для лучших результатов)
     words = re.findall(r'\b[a-zA-Zа-яА-Я0-9]{4,}\b', text)
     key_words = [w.lower() for w in words if w.lower() not in stop_words]
-    
-    # Оставляем только уникальные слова (первые 15)
     unique_words = list(dict.fromkeys(key_words))[:15]
     words_key = '_'.join(sorted(unique_words))
     
-    # 4. Извлекаем бренды/модели авто (специальная проверка)
     brands = ['tesla', 'bmw', 'mercedes', 'audi', 'porsche', 'ferrari', 
               'lamborghini', 'bugatti', 'mclaren', 'corvette', 'chevrolet',
               'ford', 'toyota', 'honda', 'nissan', 'mazda', 'lexus',
@@ -1185,58 +1166,16 @@ def generate_news_key(entry):
         'normalized_title': normalized_title
     }
 
-
-def calculate_similarity(news1, news2):
-    """
-    Вычисляет схожесть двух новостей.
-    Возвращает: 'exact' (точное совпадение), 'high' (высокая), 'medium' (средняя), 'low' (низкая)
-    """
-    key1 = news1.get('news_key', {})
-    key2 = news2.get('news_key', {})
-    
-    # 1. Точное совпадение URL
-    if key1.get('url_key') and key2.get('url_key'):
-        if key1['url_key'] == key2['url_key']:
-            return 'exact'
-    
-    # 2. Точное совпадение заголовка
-    if key1.get('title_key') and key2.get('title_key'):
-        if key1['title_key'] == key2['title_key']:
-            return 'exact'
-    
-    # 3. Схожесть ключевых слов (Jaccard similarity)
-    words1 = set(key1.get('words_key', '').split('_'))
-    words2 = set(key2.get('words_key', '').split('_'))
-    
-    if words1 and words2:
-        intersection = len(words1.intersection(words2))
-        union = len(words1.union(words2))
-        similarity = intersection / union if union > 0 else 0.0
-        
-        if similarity >= 0.8:
-            return 'high'
-        elif similarity >= 0.6:
-            return 'medium'
-        else:
-            return 'low'
-    
-    return 'low'
-
-
 def remove_duplicates(news_list, time_window_hours=48):
-    """
-    УДАЛЯЕТ дубликаты с ОЧЕНЬ СТРОГОЙ логикой + проверка по опубликованным.
-    """
     if not news_list:
         return news_list
     
-    # Загружаем ранее опубликованные заголовки
     published_titles = load_published_titles()
     
     unique_news = []
     seen_urls = set()
-    seen_titles = {}  # normalized_title → news_data
-    seen_combinations = {}  # (brands_key, words_similarity) → news_data
+    seen_titles = {}
+    seen_combinations = {}
     
     logger.info(f"🔍 Начинаю дедупликацию {len(news_list)} новостей...")
     logger.info(f"📚 В базе {len(published_titles)} ранее опубликованных заголовков")
@@ -1251,7 +1190,6 @@ def remove_duplicates(news_list, time_window_hours=48):
         duplicate_reason = None
         matched_with = None
         
-        # ПРОВЕРКА 0: По ранее опубликованным заголовкам (МЕЖЦИКЛОВАЯ ПРОВЕРКА!)
         if news_key.get('normalized_title'):
             norm_title = news_key['normalized_title']
             if norm_title in published_titles:
@@ -1260,14 +1198,12 @@ def remove_duplicates(news_list, time_window_hours=48):
                 matched_with = "уже опубликовано ранее"
                 logger.info(f"⏭️ Пропуск (уже было): {title[:80]}...")
         
-        # ПРОВЕРКА 1: Точное совпадение URL
         if not is_duplicate and link:
             if link in seen_urls:
                 is_duplicate = True
                 duplicate_reason = "URL"
                 matched_with = "тот же URL"
         
-        # ПРОВЕРКА 2: Точное совпадение нормализованного заголовка
         if not is_duplicate and news_key.get('normalized_title'):
             norm_title = news_key['normalized_title']
             if norm_title in seen_titles:
@@ -1275,7 +1211,6 @@ def remove_duplicates(news_list, time_window_hours=48):
                 duplicate_reason = "TITLE_EXACT"
                 matched_with = "тот же заголовок"
         
-        # ПРОВЕРКА 3: Схожесть заголовков (Jaccard similarity)
         if not is_duplicate and news_key.get('normalized_title'):
             current_words = set(news_key['normalized_title'].split())
             
@@ -1287,14 +1222,12 @@ def remove_duplicates(news_list, time_window_hours=48):
                     union = len(current_words.union(seen_words))
                     similarity = intersection / union if union > 0 else 0
                     
-                    # Если 70% слов совпадают — это дубликат!
                     if similarity >= 0.7:
                         is_duplicate = True
                         duplicate_reason = f"TITLE_SIMILAR_{int(similarity*100)}%"
                         matched_with = f"схожесть заголовков {similarity:.0%}"
                         break
         
-        # ПРОВЕРКА 4: Одинаковые бренды + схожий контент
         if not is_duplicate and news_key.get('brands_key') and news_key.get('words_key'):
             current_brands = news_key['brands_key']
             current_words = set(news_key['words_key'].split('_'))
@@ -1302,26 +1235,23 @@ def remove_duplicates(news_list, time_window_hours=48):
             for combo_key, seen_data in seen_combinations.items():
                 seen_brands, seen_words_set = combo_key
                 
-                # Если те же бренды И похожие ключевые слова
                 if current_brands == seen_brands and current_brands:
                     seen_words = set(seen_words_set.split('_'))
                     intersection = len(current_words.intersection(seen_words))
                     union = len(current_words.union(seen_words))
                     similarity = intersection / union if union > 0 else 0
                     
-                    if similarity >= 0.6:  # 60% схожести слов
+                    if similarity >= 0.6:
                         is_duplicate = True
                         duplicate_reason = f"BRAND_CONTENT_{int(similarity*100)}%"
                         matched_with = f"тот же бренд + схожесть {similarity:.0%}"
                         break
         
         if is_duplicate:
-            # Это дубликат!
             logger.warning(f"⏭️ ДУБЛИКАТ ({duplicate_reason}):")
             logger.warning(f"   Заголовок: {title[:80]}...")
             logger.warning(f"   Причина: {matched_with}")
             
-            # Выбираем лучшую версию (с более высоким рейтингом)
             if duplicate_reason != "ALREADY_PUBLISHED":
                 for i, item in enumerate(unique_news):
                     item_key = item.get('news_key', {})
@@ -1333,16 +1263,13 @@ def remove_duplicates(news_list, time_window_hours=48):
                             unique_news[i] = news_data
                         break
         else:
-            # Уникальная новость
             unique_news.append(news_data)
             
-            # Сохраняем для проверки в ЭТОМ цикле
             if link:
                 seen_urls.add(link)
             
             if news_key.get('normalized_title'):
                 seen_titles[news_key['normalized_title']] = news_data
-                # Сохраняем в постоянное хранилище!
                 save_published_title(news_key['normalized_title'])
             
             if news_key.get('brands_key') and news_key.get('words_key'):
@@ -1353,7 +1280,11 @@ def remove_duplicates(news_list, time_window_hours=48):
     
     logger.info(f"✨ После дедупликации: {len(unique_news)} новостей (было {len(news_list)}, удалено {len(news_list) - len(unique_news)})")
     return unique_news
-    
+
+# ============================================
+# ОСНОВНАЯ ЛОГИКА
+# ============================================
+
 def fetch_and_publish():
     published = load_published()
     new_count = 0
@@ -1363,6 +1294,10 @@ def fetch_and_publish():
     failed_sources = 0
     
     all_news = []
+    
+    # 🏁 Проверяем остаток слотов для спортивных новостей
+    motorsport_remaining = get_motorsport_remaining()
+    logger.info(f"🏁 Осталось слотов для спорта сегодня: {motorsport_remaining}/{MOTORSPORT_DAILY_LIMIT}")
     
     logger.info(f"Начинаем проверку {len(RSS_FEEDS)} источников...")
     
@@ -1387,9 +1322,12 @@ def fetch_and_publish():
                 continue
             
             working_sources += 1
-            logger.info(f"✅ {feed_info['name']}: найдено {len(feed.entries)} новостей")
             
-            for entry in feed.entries[:NEWS_PER_SOURCE]:
+            # 🏁 Применяем лимит на количество новостей для спортивных источников
+            source_limit = feed_info.get('max_per_cycle', NEWS_PER_SOURCE)
+            logger.info(f"✅ {feed_info['name']}: найдено {len(feed.entries)} новостей (лимит: {source_limit})")
+            
+            for entry in feed.entries[:source_limit]:
                 try:
                     news_id = get_news_id(entry)
                     
@@ -1399,7 +1337,6 @@ def fetch_and_publish():
                     score, keywords = calculate_news_score(entry, feed_info)
                     category_id, category_info = get_news_category(entry, feed_info)
                     
-                    # Создаём улучшенный ключ для дедупликации
                     news_key = generate_news_key(entry)
                     
                     all_news.append({
@@ -1420,32 +1357,41 @@ def fetch_and_publish():
             failed_sources += 1
             continue
     
-    # Сортируем по рейтингу
     all_news.sort(key=lambda x: x['score'], reverse=True)
     
     logger.info(f"📊 Рабочих источников: {working_sources} | Не рабочих: {failed_sources}")
     logger.info(f"📰 Собрано {len(all_news)} новостей до дедупликации")
     
-    # ДЕДУПЛИКАЦИЯ
     all_news = remove_duplicates(all_news)
     logger.info(f"✨ После дедупликации: {len(all_news)} уникальных новостей")
     
-    # Балансировка
+    # Балансировка с лимитом на спорт
     russian_count = 0
     foreign_count = 0
     cis_count = 0
+    motorsport_count = 0
     published_news = []
     
     for news_data in all_news:
         score = news_data['score']
         country = news_data['feed_info'].get('country', 'world')
+        category_id = news_data['category'].get('name', 'Новости') if isinstance(news_data['category'], dict) else news_data['category']
         is_russian = country == 'russia'
         is_cis = country in ['belarus', 'kazakhstan', 'armenia', 'azerbaijan', 
                               'uzbekistan', 'kyrgyzstan', 'moldova']
+        is_motorsport = 'motorsport' in news_data['feed_info'].get('category', '')
         
         if score < MIN_SCORE:
             skipped_count += 1
             continue
+        
+        #  ЛИМИТ СПОРТИВНЫХ НОВОСТЕЙ
+        if is_motorsport:
+            if motorsport_count >= motorsport_remaining:
+                skipped_count += 1
+                logger.info(f"🏁 Пропуск спорта (лимит {MOTORSPORT_DAILY_LIMIT}/сутки достигнут): {news_data['entry'].get('title', '')[:50]}")
+                continue
+            motorsport_count += 1
         
         if is_russian:
             if foreign_count + cis_count >= russian_count * 5:
@@ -1465,8 +1411,8 @@ def fetch_and_publish():
             break
     
     logger.info(f"📝 Отобрано {len(published_news)} новостей для публикации")
+    logger.info(f"🏁 Спортивных новостей в этом цикле: {motorsport_count}")
     
-    # Публикуем
     for news_data in published_news:
         try:
             entry = news_data['entry']
@@ -1479,42 +1425,47 @@ def fetch_and_publish():
             image_url = get_image_url(entry)
             
             if send_news_to_channel(message, image_url):
-                # Получаем нормализованный заголовок
                 news_key = news_data.get('news_key', {})
                 normalized_title = news_key.get('normalized_title', '')
                 save_published(news_id, normalized_title)
                 
+                # 🏁 Увеличиваем счётчик спортивных новостей
+                if 'motorsport' in feed_info.get('category', ''):
+                    new_motorsport_count = increment_motorsport_count()
+                    logger.info(f"🏁 Спортивная новость #{new_motorsport_count}/{MOTORSPORT_DAILY_LIMIT} за сегодня")
+                
                 new_count += 1
                 country = feed_info.get('country', 'world')
-                flag = {'russia': '🇷🇺', 'belarus': '🇧🇾', 'kazakhstan': '🇰🇿',
+                flag = {'russia': '🇺', 'belarus': '🇾', 'kazakhstan': '🇿',
                         'armenia': '🇦🇲', 'azerbaijan': '🇦🇿', 'uzbekistan': '🇺🇿',
-                        'kyrgyzstan': '🇰🇬', 'moldova': '🇲🇩'}.get(country, '')
+                        'kyrgyzstan': '🇰🇬', 'moldova': '🇲'}.get(country, '')
                 source_name = feed_info.get('name', 'Unknown')
                 logger.info(f"✅ [{flag}] {source_name} (рейтинг {score:.2f}): {title[:50]}...")
                 time.sleep(3)
             else:
                 error_count += 1
         except Exception as e:
-            logger.error(f"❌ Ошибка публикации: {e}")
+            logger.error(f" Ошибка публикации: {e}")
             error_count += 1
             continue
     
-    logger.info(f"📈 Итог: ✅{new_count} | 🇷🇺{russian_count} | СНГ{cis_count} | 🌍{foreign_count} | ⏭️{skipped_count} | ❌{error_count}")
+    logger.info(f"📈 Итог: ✅{new_count} | 🇷🇺{russian_count} | СНГ{cis_count} | 🌍{foreign_count} | 🏁{motorsport_count} | ⏭️{skipped_count} | ❌{error_count}")
     return new_count, error_count
-    
+
 def send_startup_message():
     try:
         startup_message = (
             "🤖 *Auto imPulse News Bot запущен!*\n\n"
-            f"📊 Источников: {len(RSS_FEEDS)}\n"
+            f" Источников: {len(RSS_FEEDS)}\n"
             f"🌍 Страны: Россия, Беларусь, Казахстан, Армения,\n"
             f"      Азербайджан, Узбекистан, Кыргызстан, Молдова\n"
             f"      + Великобритания, США, мир\n"
             f"⏱️ Интервал: {CHECK_INTERVAL // 60} мин\n"
             f"📈 Мин. рейтинг: {MIN_SCORE}/10\n"
-            f"🌐 Перевод: {'✅ MyMemory + глоссарий' if ENABLE_TRANSLATION else '❌'}\n"
-            f"🖼️ Изображения: {'✅' if ENABLE_IMAGES else '❌'}\n"
-            f"🏷️ Хештеги: {'✅' if ENABLE_HASHTAGS else '❌'}\n\n"
+            f"🌐 Перевод: {'✅ Google Translate' if ENABLE_TRANSLATION else '❌'}\n"
+            f"🖼️ Изображения: {'✅' if ENABLE_IMAGES else ''}\n"
+            f"🏷️ Хештеги: {'✅' if ENABLE_HASHTAGS else '❌'}\n"
+            f"🏁 Лимит спорта: {MOTORSPORT_DAILY_LIMIT}/сутки\n\n"
             f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
         logger.info("Бот успешно запущен!")
