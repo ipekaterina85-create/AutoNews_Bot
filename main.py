@@ -1086,55 +1086,61 @@ def send_news_to_channel(message, image_url=None):
 # ============================================
 def generate_news_key(entry):
     """
-    Создаёт уникальный ключ новости.
-    Проверяет URL, заголовок и ключевые слова.
+    Создаёт уникальный ключ новости с УЛУЧШЕННОЙ логикой.
     """
     title = entry.get('title', '').lower().strip()
     link = entry.get('link', '').strip()
     summary = entry.get('summary', '').lower()
     
-    # Создаём ключ из URL (самый надёжный идентификатор)
+    # 1. Создаём ключ из URL
     url_key = hashlib.md5(link.encode('utf-8')).hexdigest() if link else ''
     
-    # Создаём ключ из заголовка (нормализованного)
-    # Убираем спецсимволы, приводим к нижнему регистру
-    normalized_title = re.sub(r'[^\w\s]', '', title)
+    # 2. Создаём ключ из заголовка (нормализованного)
+    normalized_title = re.sub(r'[^\w\sа-яa-z0-9]', '', title)
     normalized_title = re.sub(r'\s+', ' ', normalized_title).strip()
     title_key = hashlib.md5(normalized_title.encode('utf-8')).hexdigest()
     
-    # Создаём ключ из ключевых слов
+    # 3. Извлекаем ключевые слова (только важные)
     text = f"{title} {summary}"
     text = re.sub('<[^<]+?>', '', text)
     
+    # Стоп-слова (расширенные)
     stop_words = {
         'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
         'of', 'with', 'by', 'from', 'is', 'are', 'was', 'were', 'be', 'been',
-        'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would',
-        'could', 'should', 'may', 'might', 'must', 'shall', 'can', 'need',
-        'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it',
-        'we', 'they', 'what', 'which', 'who', 'when', 'where', 'why', 'how',
-        'all', 'each', 'every', 'both', 'few', 'more', 'most', 'other',
-        'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so',
-        'than', 'too', 'very', 'just', 'now', 'here', 'there', 'then',
         'в', 'на', 'с', 'к', 'по', 'под', 'над', 'для', 'от', 'до',
         'и', 'или', 'но', 'а', 'да', 'же', 'ли', 'бы', 'будет', 'будут',
-        'был', 'была', 'было', 'были', 'есть', 'быть', 'этот', 'эта', 'это',
-        'эти', 'тот', 'та', 'то', 'те', 'свой', 'своя', 'своё', 'свои',
-        'как', 'так', 'где', 'когда', 'почему', 'зачем', 'кто', 'что',
-        'весь', 'вся', 'всё', 'все', 'каждый', 'каждая', 'каждое', 'каждые'
+        'был', 'была', 'было', 'были', 'есть', 'быть',
+        'новый', 'новая', 'новое', 'новые',
+        'фото', 'фотографии', 'обзор', 'представлен', 'представлена'
     }
     
-    words = re.findall(r'\b[a-zA-Zа-яА-Я0-9]{3,}\b', text)
+    # Извлекаем слова (минимум 4 буквы для лучших результатов)
+    words = re.findall(r'\b[a-zA-Zа-яА-Я0-9]{4,}\b', text)
     key_words = [w.lower() for w in words if w.lower() not in stop_words]
-    unique_words = list(dict.fromkeys(key_words))[:10]
+    
+    # Оставляем только уникальные слова (первые 15)
+    unique_words = list(dict.fromkeys(key_words))[:15]
     words_key = '_'.join(sorted(unique_words))
+    
+    # 4. Извлекаем бренды/модели авто (специальная проверка)
+    brands = ['tesla', 'bmw', 'mercedes', 'audi', 'porsche', 'ferrari', 
+              'lamborghini', 'bugatti', 'mclaren', 'corvette', 'chevrolet',
+              'ford', 'toyota', 'honda', 'nissan', 'mazda', 'lexus',
+              'lada', 'уаз', 'камаз', 'автоваз', 'byd', 'nio', 'xpeng',
+              'geely', 'chery', 'haval', 'changan', 'exeed']
+    
+    found_brands = [brand for brand in brands if brand in text.lower()]
+    brands_key = '_'.join(sorted(found_brands))
     
     return {
         'url_key': url_key,
         'title_key': title_key,
         'words_key': words_key,
+        'brands_key': brands_key,
         'title': title,
-        'link': link
+        'link': link,
+        'normalized_title': normalized_title
     }
 
 
@@ -1177,98 +1183,117 @@ def calculate_similarity(news1, news2):
 
 def remove_duplicates(news_list, time_window_hours=48):
     """
-    Удаляет дубликаты новостей с УЛУЧШЕННОЙ логикой.
-    Проверяет заголовок, URL и ключевые слова.
+    УДАЛЯЕТ дубликаты с ОЧЕНЬ СТРОГОЙ логикой.
     """
     if not news_list:
         return news_list
     
     unique_news = []
+    seen_urls = set()
     seen_titles = {}  # normalized_title → news_data
-    seen_urls = set()  # url_hash
-    seen_keys = {}  # words_key → news_data
+    seen_combinations = {}  # (brands_key, words_similarity) → news_data
     
-    logger.info(f" Начинаю дедупликацию {len(news_list)} новостей...")
+    logger.info(f"🔍 Начинаю дедупликацию {len(news_list)} новостей...")
     
     for news_data in news_list:
         entry = news_data['entry']
-        title = entry.get('title', '').strip().lower()
+        title = entry.get('title', '').strip()
         link = entry.get('link', '').strip()
         news_key = news_data.get('news_key', {})
         
-        # Нормализуем заголовок (убираем спецсимволы)
-        normalized_title = re.sub(r'[^\w\sа-яa-z0-9]', '', title)
-        normalized_title = re.sub(r'\s+', ' ', normalized_title).strip()
-        
         is_duplicate = False
-        duplicate_type = None
+        duplicate_reason = None
         matched_with = None
         
-        # 1. Проверяем URL (самый надёжный способ)
+        # ПРОВЕРКА 1: Точное совпадение URL
         if link:
-            url_hash = hashlib.md5(link.encode('utf-8')).hexdigest()
-            if url_hash in seen_urls:
+            if link in seen_urls:
                 is_duplicate = True
-                duplicate_type = "URL"
+                duplicate_reason = "URL"
                 matched_with = "тот же URL"
         
-        # 2. Проверяем заголовок (точное совпадение)
-        if not is_duplicate and normalized_title:
-            if normalized_title in seen_titles:
+        # ПРОВЕРКА 2: Точное совпадение нормализованного заголовка
+        if not is_duplicate and news_key.get('normalized_title'):
+            norm_title = news_key['normalized_title']
+            if norm_title in seen_titles:
                 is_duplicate = True
-                duplicate_type = "TITLE"
+                duplicate_reason = "TITLE_EXACT"
                 matched_with = "тот же заголовок"
         
-        # 3. Проверяем ключевые слова (схожесть)
-        if not is_duplicate and news_key.get('words_key'):
-            words_current = set(news_key['words_key'].split('_'))
+        # ПРОВЕРКА 3: Схожесть заголовков (Jaccard similarity)
+        if not is_duplicate and news_key.get('normalized_title'):
+            current_words = set(news_key['normalized_title'].split())
             
-            for seen_key, seen_data in seen_keys.items():
-                words_seen = set(seen_key.split('_'))
+            for seen_title, seen_data in seen_titles.items():
+                seen_words = set(seen_title.split())
                 
-                if words_current and words_seen:
-                    # Jaccard similarity
-                    intersection = len(words_current.intersection(words_seen))
-                    union = len(words_current.union(words_seen))
+                if current_words and seen_words:
+                    intersection = len(current_words.intersection(seen_words))
+                    union = len(current_words.union(seen_words))
                     similarity = intersection / union if union > 0 else 0
                     
-                    if similarity >= 0.7:  # 70% схожести
+                    # Если 70% слов совпадают — это дубликат!
+                    if similarity >= 0.7:
                         is_duplicate = True
-                        duplicate_type = "KEYWORDS"
-                        matched_with = f"схожесть {similarity:.0%}"
+                        duplicate_reason = f"TITLE_SIMILAR_{int(similarity*100)}%"
+                        matched_with = f"схожесть заголовков {similarity:.0%}"
+                        break
+        
+        # ПРОВЕРКА 4: Одинаковые бренды + схожий контент
+        if not is_duplicate and news_key.get('brands_key') and news_key.get('words_key'):
+            current_brands = news_key['brands_key']
+            current_words = set(news_key['words_key'].split('_'))
+            
+            for combo_key, seen_data in seen_combinations.items():
+                seen_brands, seen_words_set = combo_key
+                
+                # Если те же бренды И похожие ключевые слова
+                if current_brands == seen_brands and current_brands:
+                    seen_words = set(seen_words_set.split('_'))
+                    intersection = len(current_words.intersection(seen_words))
+                    union = len(current_words.union(seen_words))
+                    similarity = intersection / union if union > 0 else 0
+                    
+                    if similarity >= 0.6:  # 60% схожести слов
+                        is_duplicate = True
+                        duplicate_reason = f"BRAND_CONTENT_{int(similarity*100)}%"
+                        matched_with = f"тот же бренд + схожесть {similarity:.0%}"
                         break
         
         if is_duplicate:
             # Это дубликат!
-            logger.warning(f"⏭️ ДУБЛИКАТ ({duplicate_type}): {title[:80]}...")
+            logger.warning(f"⏭️ ДУБЛИКАТ ({duplicate_reason}):")
+            logger.warning(f"   Заголовок: {title[:80]}...")
             logger.warning(f"   Причина: {matched_with}")
             
             # Выбираем лучшую версию (с более высоким рейтингом)
-            if duplicate_type == "KEYWORDS":
-                for i, item in enumerate(unique_news):
-                    if item.get('news_id') == seen_keys.get(news_key.get('words_key', ''), {}).get('news_id'):
-                        if news_data['score'] > item['score']:
-                            logger.info(f"   ↪️ Заменяем (рейтинг {news_data['score']:.2f} > {item['score']:.2f})")
-                            unique_news[i] = news_data
-                        break
+            for i, item in enumerate(unique_news):
+                item_key = item.get('news_key', {})
+                if (item_key.get('title_key') == news_key.get('title_key') or
+                    item_key.get('url_key') == news_key.get('url_key')):
+                    
+                    if news_data['score'] > item['score']:
+                        logger.info(f"   ↪️ Заменяем (рейтинг {news_data['score']:.2f} > {item['score']:.2f})")
+                        unique_news[i] = news_data
+                    break
         else:
             # Уникальная новость
             unique_news.append(news_data)
             
             # Сохраняем для проверки
             if link:
-                url_hash = hashlib.md5(link.encode('utf-8')).hexdigest()
-                seen_urls.add(url_hash)
+                seen_urls.add(link)
             
-            if normalized_title:
-                seen_titles[normalized_title] = news_data
+            if news_key.get('normalized_title'):
+                seen_titles[news_key['normalized_title']] = news_data
             
-            if news_key.get('words_key'):
-                seen_keys[news_key['words_key']] = news_data
+            if news_key.get('brands_key') and news_key.get('words_key'):
+                combo_key = (news_key['brands_key'], news_key['words_key'])
+                seen_combinations[combo_key] = news_data
             
             logger.info(f"✅ Уникальная: {title[:60]}...")
     
-    logger.info(f"✨ После дедупликации: {len(unique_news)} новостей (было {len(news_list)})")
+    logger.info(f"✨ После дедупликации: {len(unique_news)} новостей (было {len(news_list)}, удалено {len(news_list) - len(unique_news)})")
     return unique_news
     
 def fetch_and_publish():
