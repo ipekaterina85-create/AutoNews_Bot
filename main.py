@@ -1119,39 +1119,49 @@ def send_news_to_channel(message, image_url=None):
 # ============================================
 
 def generate_news_key(entry):
+    """
+    Создаёт уникальный ключ новости с УЛУЧШЕННОЙ нормализацией.
+    """
     title = entry.get('title', '').lower().strip()
     link = entry.get('link', '').strip()
     summary = entry.get('summary', '').lower()
     
+    # 1. Ключ из URL
     url_key = hashlib.md5(link.encode('utf-8')).hexdigest() if link else ''
     
+    # 2. УЛУЧШЕННАЯ нормализация заголовка
+    # Удаляем всё кроме букв, цифр и пробелов
     normalized_title = re.sub(r'[^\w\sа-яa-z0-9]', '', title)
+    # Удаляем лишние пробелы
     normalized_title = re.sub(r'\s+', ' ', normalized_title).strip()
+    # Удаляем стоп-слова
+    stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+                  'of', 'with', 'by', 'from', 'is', 'are', 'was', 'were', 'be', 'been',
+                  'в', 'на', 'с', 'к', 'по', 'под', 'над', 'для', 'от', 'до',
+                  'и', 'или', 'но', 'а', 'да', 'же', 'ли', 'бы', 'будет', 'будут',
+                  'был', 'была', 'было', 'были', 'есть', 'быть',
+                  'новый', 'новая', 'новое', 'новые', 'обзор', 'фото', 'фотографии'}
+    words = normalized_title.split()
+    filtered_words = [w for w in words if w not in stop_words and len(w) > 2]
+    normalized_title = ' '.join(filtered_words)
+    
     title_key = hashlib.md5(normalized_title.encode('utf-8')).hexdigest()
     
+    # 3. Ключевые слова
     text = f"{title} {summary}"
     text = re.sub('<[^<]+?>', '', text)
-    
-    stop_words = {
-        'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
-        'of', 'with', 'by', 'from', 'is', 'are', 'was', 'were', 'be', 'been',
-        'в', 'на', 'с', 'к', 'по', 'под', 'над', 'для', 'от', 'до',
-        'и', 'или', 'но', 'а', 'да', 'же', 'ли', 'бы', 'будет', 'будут',
-        'был', 'была', 'было', 'были', 'есть', 'быть',
-        'новый', 'новая', 'новое', 'новые',
-        'фото', 'фотографии', 'обзор', 'представлен', 'представлена'
-    }
     
     words = re.findall(r'\b[a-zA-Zа-яА-Я0-9]{4,}\b', text)
     key_words = [w.lower() for w in words if w.lower() not in stop_words]
     unique_words = list(dict.fromkeys(key_words))[:15]
     words_key = '_'.join(sorted(unique_words))
     
+    # 4. Бренды
     brands = ['tesla', 'bmw', 'mercedes', 'audi', 'porsche', 'ferrari', 
               'lamborghini', 'bugatti', 'mclaren', 'corvette', 'chevrolet',
               'ford', 'toyota', 'honda', 'nissan', 'mazda', 'lexus',
               'lada', 'уаз', 'камаз', 'автоваз', 'byd', 'nio', 'xpeng',
-              'geely', 'chery', 'haval', 'changan', 'exeed']
+              'geely', 'chery', 'haval', 'changan', 'exeed', 'jeep', 'avenger']
     
     found_brands = [brand for brand in brands if brand in text.lower()]
     brands_key = '_'.join(sorted(found_brands))
@@ -1167,6 +1177,9 @@ def generate_news_key(entry):
     }
 
 def remove_duplicates(news_list, time_window_hours=48):
+    """
+    УСИЛЕННАЯ дедупликация с множеством проверок.
+    """
     if not news_list:
         return news_list
     
@@ -1174,10 +1187,11 @@ def remove_duplicates(news_list, time_window_hours=48):
     
     unique_news = []
     seen_urls = set()
-    seen_titles = {}
+    seen_exact_titles = set()  # НОВОЕ: точные заголовки
+    seen_normalized_titles = {}  # нормализованные заголовки
     seen_combinations = {}
     
-    logger.info(f"🔍 Начинаю дедупликацию {len(news_list)} новостей...")
+    logger.info(f"🔍 Начинаю усиленную дедупликацию {len(news_list)} новостей...")
     logger.info(f"📚 В базе {len(published_titles)} ранее опубликованных заголовков")
     
     for news_data in news_list:
@@ -1190,6 +1204,7 @@ def remove_duplicates(news_list, time_window_hours=48):
         duplicate_reason = None
         matched_with = None
         
+        # ПРОВЕРКА 1: По ранее опубликованным (межцикловая)
         if news_key.get('normalized_title'):
             norm_title = news_key['normalized_title']
             if norm_title in published_titles:
@@ -1198,23 +1213,35 @@ def remove_duplicates(news_list, time_window_hours=48):
                 matched_with = "уже опубликовано ранее"
                 logger.info(f"⏭️ Пропуск (уже было): {title[:80]}...")
         
+        # ПРОВЕРКА 2: Точное совпадение URL
         if not is_duplicate and link:
             if link in seen_urls:
                 is_duplicate = True
                 duplicate_reason = "URL"
                 matched_with = "тот же URL"
         
+        # ПРОВЕРКА 3: ТОЧНОЕ совпадение заголовка (НОВОЕ!)
+        if not is_duplicate and title:
+            if title in seen_exact_titles:
+                is_duplicate = True
+                duplicate_reason = "EXACT_TITLE"
+                matched_with = "точное совпадение заголовка"
+                logger.info(f"⏭️ Пропуск (точный заголовок): {title[:80]}...")
+        
+        # ПРОВЕРКА 4: Нормализованное совпадение заголовка
         if not is_duplicate and news_key.get('normalized_title'):
             norm_title = news_key['normalized_title']
-            if norm_title in seen_titles:
+            if norm_title in seen_normalized_titles:
                 is_duplicate = True
-                duplicate_reason = "TITLE_EXACT"
-                matched_with = "тот же заголовок"
+                duplicate_reason = "NORMALIZED_TITLE"
+                matched_with = "нормализованное совпадение"
+                logger.info(f"️ Пропуск (нормализованный): {title[:80]}...")
         
+        # ПРОВЕРКА 5: Схожесть заголовков (Jaccard)
         if not is_duplicate and news_key.get('normalized_title'):
             current_words = set(news_key['normalized_title'].split())
             
-            for seen_title, seen_data in seen_titles.items():
+            for seen_title, seen_data in seen_normalized_titles.items():
                 seen_words = set(seen_title.split())
                 
                 if current_words and seen_words:
@@ -1228,6 +1255,7 @@ def remove_duplicates(news_list, time_window_hours=48):
                         matched_with = f"схожесть заголовков {similarity:.0%}"
                         break
         
+        # ПРОВЕРКА 6: Одинаковые бренды + контент
         if not is_duplicate and news_key.get('brands_key') and news_key.get('words_key'):
             current_brands = news_key['brands_key']
             current_words = set(news_key['words_key'].split('_'))
@@ -1252,6 +1280,7 @@ def remove_duplicates(news_list, time_window_hours=48):
             logger.warning(f"   Заголовок: {title[:80]}...")
             logger.warning(f"   Причина: {matched_with}")
             
+            # Выбираем лучшую версию
             if duplicate_reason != "ALREADY_PUBLISHED":
                 for i, item in enumerate(unique_news):
                     item_key = item.get('news_key', {})
@@ -1268,8 +1297,11 @@ def remove_duplicates(news_list, time_window_hours=48):
             if link:
                 seen_urls.add(link)
             
+            if title:
+                seen_exact_titles.add(title)  # НОВОЕ
+            
             if news_key.get('normalized_title'):
-                seen_titles[news_key['normalized_title']] = news_data
+                seen_normalized_titles[news_key['normalized_title']] = news_data
                 save_published_title(news_key['normalized_title'])
             
             if news_key.get('brands_key') and news_key.get('words_key'):
