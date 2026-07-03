@@ -860,6 +860,42 @@ def get_news_category(entry, feed_info):
 # ============================================
 
 PUBLISHED_FILE = 'published_news.txt'
+# Хранилище для проверки дубликатов (нормализованные заголовки)
+DUPLICATES_FILE = 'published_titles.txt'
+MAX_DUPLICATES_HISTORY = 5000  # Храним последние 5000 заголовков
+
+def load_published_titles():
+    """Загружает нормализованные заголовки опубликованных новостей"""
+    if os.path.exists(DUPLICATES_FILE):
+        try:
+            with open(DUPLICATES_FILE, 'r', encoding='utf-8') as f:
+                return set(line.strip() for line in f if line.strip())
+        except Exception as e:
+            logger.error(f"Ошибка загрузки заголовков: {e}")
+            return set()
+    return set()
+
+def save_published_title(normalized_title):
+    """Сохраняет нормализованный заголовок"""
+    try:
+        with open(DUPLICATES_FILE, 'a', encoding='utf-8') as f:
+            f.write(f"{normalized_title}\n")
+        cleanup_duplicates_file()
+    except Exception as e:
+        logger.error(f"Ошибка сохранения заголовка: {e}")
+
+def cleanup_duplicates_file():
+    """Очищает файл дубликатов, оставляя последние N записей"""
+    try:
+        if not os.path.exists(DUPLICATES_FILE):
+            return
+        with open(DUPLICATES_FILE, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        if len(lines) > MAX_DUPLICATES_HISTORY:
+            with open(DUPLICATES_FILE, 'w', encoding='utf-8') as f:
+                f.writelines(lines[-MAX_DUPLICATES_HISTORY:])
+    except Exception as e:
+        logger.error(f"Ошибка очистки файла дубликатов: {e}")
 MAX_PUBLISHED_HISTORY = 10000
 
 def load_published():
@@ -872,10 +908,16 @@ def load_published():
             return set()
     return set()
 
-def save_published(news_id):
+def save_published(news_id, normalized_title=None):
+    """Сохраняет ID новости и нормализованный заголовок"""
     try:
         with open(PUBLISHED_FILE, 'a', encoding='utf-8') as f:
             f.write(f"{news_id}\n")
+        
+        # Сохраняем заголовок для дедупликации
+        if normalized_title:
+            save_published_title(normalized_title)
+        
         cleanup_published_file()
     except Exception as e:
         logger.error(f"Ошибка сохранения: {e}")
@@ -1183,10 +1225,13 @@ def calculate_similarity(news1, news2):
 
 def remove_duplicates(news_list, time_window_hours=48):
     """
-    УДАЛЯЕТ дубликаты с ОЧЕНЬ СТРОГОЙ логикой.
+    УДАЛЯЕТ дубликаты с ОЧЕНЬ СТРОГОЙ логикой + проверка по опубликованным.
     """
     if not news_list:
         return news_list
+    
+    # Загружаем ранее опубликованные заголовки
+    published_titles = load_published_titles()
     
     unique_news = []
     seen_urls = set()
@@ -1194,6 +1239,7 @@ def remove_duplicates(news_list, time_window_hours=48):
     seen_combinations = {}  # (brands_key, words_similarity) → news_data
     
     logger.info(f"🔍 Начинаю дедупликацию {len(news_list)} новостей...")
+    logger.info(f"📚 В базе {len(published_titles)} ранее опубликованных заголовков")
     
     for news_data in news_list:
         entry = news_data['entry']
@@ -1205,8 +1251,17 @@ def remove_duplicates(news_list, time_window_hours=48):
         duplicate_reason = None
         matched_with = None
         
+        # ПРОВЕРКА 0: По ранее опубликованным заголовкам (МЕЖЦИКЛОВАЯ ПРОВЕРКА!)
+        if news_key.get('normalized_title'):
+            norm_title = news_key['normalized_title']
+            if norm_title in published_titles:
+                is_duplicate = True
+                duplicate_reason = "ALREADY_PUBLISHED"
+                matched_with = "уже опубликовано ранее"
+                logger.info(f"⏭️ Пропуск (уже было): {title[:80]}...")
+        
         # ПРОВЕРКА 1: Точное совпадение URL
-        if link:
+        if not is_duplicate and link:
             if link in seen_urls:
                 is_duplicate = True
                 duplicate_reason = "URL"
@@ -1267,25 +1322,28 @@ def remove_duplicates(news_list, time_window_hours=48):
             logger.warning(f"   Причина: {matched_with}")
             
             # Выбираем лучшую версию (с более высоким рейтингом)
-            for i, item in enumerate(unique_news):
-                item_key = item.get('news_key', {})
-                if (item_key.get('title_key') == news_key.get('title_key') or
-                    item_key.get('url_key') == news_key.get('url_key')):
-                    
-                    if news_data['score'] > item['score']:
-                        logger.info(f"   ↪️ Заменяем (рейтинг {news_data['score']:.2f} > {item['score']:.2f})")
-                        unique_news[i] = news_data
-                    break
+            if duplicate_reason != "ALREADY_PUBLISHED":
+                for i, item in enumerate(unique_news):
+                    item_key = item.get('news_key', {})
+                    if (item_key.get('title_key') == news_key.get('title_key') or
+                        item_key.get('url_key') == news_key.get('url_key')):
+                        
+                        if news_data['score'] > item['score']:
+                            logger.info(f"   ↪️ Заменяем (рейтинг {news_data['score']:.2f} > {item['score']:.2f})")
+                            unique_news[i] = news_data
+                        break
         else:
             # Уникальная новость
             unique_news.append(news_data)
             
-            # Сохраняем для проверки
+            # Сохраняем для проверки в ЭТОМ цикле
             if link:
                 seen_urls.add(link)
             
             if news_key.get('normalized_title'):
                 seen_titles[news_key['normalized_title']] = news_data
+                # Сохраняем в постоянное хранилище!
+                save_published_title(news_key['normalized_title'])
             
             if news_key.get('brands_key') and news_key.get('words_key'):
                 combo_key = (news_key['brands_key'], news_key['words_key'])
@@ -1421,7 +1479,10 @@ def fetch_and_publish():
             image_url = get_image_url(entry)
             
             if send_news_to_channel(message, image_url):
-                save_published(news_id)
+    # Получаем нормализованный заголовок
+    news_key = news_data.get('news_key', {})
+    normalized_title = news_key.get('normalized_title', '')
+    save_published(news_id, normalized_title)
                 new_count += 1
                 country = feed_info.get('country', 'world')
                 flag = {'russia': '🇷🇺', 'belarus': '🇧🇾', 'kazakhstan': '🇰🇿',
