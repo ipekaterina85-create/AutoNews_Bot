@@ -1378,15 +1378,16 @@ def fetch_and_publish():
     logger.info(f"📊 Рабочих источников: {working_sources} | Не рабочих: {failed_sources}")
     logger.info(f"📰 Собрано {len(all_news)} новостей до дедупликации")
     
-    # Дедупликация
+        # Дедупликация
     all_news = remove_duplicates(all_news)
     logger.info(f"✨ После дедупликации: {len(all_news)} уникальных новостей")
     
-    # Берём только ТОП-8 новостей (или сколько осталось слотов)
-    max_to_publish = min(daily_remaining, 8)
-    all_news = all_news[:max_to_publish]
+    # 🎯 БЕРЁМ ТОЛЬКО ТОП-2 НОВОСТИ ЗА ЦИКЛ (не все 8!)
+    # За день (48 циклов) наберётся 8 постов
+    max_per_cycle = 2
+    all_news = all_news[:max_per_cycle]
     
-    logger.info(f"🎯 Отобрано ТОП-{len(all_news)} новостей для публикации")
+    logger.info(f"🎯 Отобрано ТОП-{len(all_news)} новостей для этого цикла")
     
     # Балансировка по категориям
     russian_count = 0
@@ -1411,7 +1412,7 @@ def fetch_and_publish():
         if is_motorsport:
             if motorsport_count >= motorsport_remaining:
                 skipped_count += 1
-                logger.info(f" Пропуск спорта (лимит {MOTORSPORT_DAILY_LIMIT}/сутки): {news_data['entry'].get('title', '')[:50]}")
+                logger.info(f"️ Пропуск спорта (лимит {MOTORSPORT_DAILY_LIMIT}/сутки): {news_data['entry'].get('title', '')[:50]}")
                 continue
             motorsport_count += 1
         
@@ -1430,18 +1431,19 @@ def fetch_and_publish():
         
         published_news.append(news_data)
         
-        if len(published_news) >= max_to_publish:
+        if len(published_news) >= max_per_cycle:
             break
     
-    logger.info(f"📝 Отобрано {len(published_news)} новостей для публикации")
+    logger.info(f"📝 Отобрано {len(published_news)} новостей для публикации в этом цикле")
     logger.info(f"🏁 Спортивных новостей: {motorsport_count}")
     
     # Публикуем
     posts_published_today = 0
     
     for news_data in published_news:
+        # Проверяем дневной лимит
         if posts_published_today >= daily_remaining:
-            logger.info(f"⏭️ Дневной лимит постов достигнут ({DAILY_POST_LIMIT}/день)")
+            logger.info(f"️ Дневной лимит постов достигнут ({DAILY_POST_LIMIT}/день)")
             break
         
         try:
@@ -1469,8 +1471,8 @@ def fetch_and_publish():
                 new_count += 1
                 country = feed_info.get('country', 'world')
                 flag = {'russia': '🇷🇺', 'belarus': '🇧🇾', 'kazakhstan': '🇰🇿',
-                        'armenia': '🇦🇲', 'azerbaijan': '🇦', 
-                        'kyrgyzstan': '🇬', 'moldova': '🇲🇩'}.get(country, '')
+                        'armenia': '🇦🇲', 'azerbaijan': '🇦🇿', 
+                        'kyrgyzstan': '🇰', 'moldova': '🇲🇩'}.get(country, '')
                 source_name = feed_info.get('name', 'Unknown')
                 logger.info(f"✅ [{flag}] {source_name} (рейтинг {score:.2f}): {title[:50]}...")
                 logger.info(f"📊 Пост {new_daily_count}/{DAILY_POST_LIMIT} за сегодня")
@@ -1482,8 +1484,9 @@ def fetch_and_publish():
             error_count += 1
             continue
     
-    logger.info(f"📈 Итог: ✅{new_count} | 🇺{russian_count} | СНГ{cis_count} | 🌍{foreign_count} | 🏁{motorsport_count} | ️{skipped_count} | ❌{error_count}")
-    logger.info(f"📊 Опубликовано сегодня: {posts_published_today}/{DAILY_POST_LIMIT}")
+    logger.info(f"📈 Итог: ✅{new_count} | 🇷🇺{russian_count} | СНГ{cis_count} | 🌍{foreign_count} | 🏁{motorsport_count} | ⏭️{skipped_count} | ❌{error_count}")
+    logger.info(f"📊 Опубликовано в этом цикле: {posts_published_today}")
+    logger.info(f"📊 Всего сегодня: {load_daily_post_count()}/{DAILY_POST_LIMIT}")
     return new_count, error_count
 
 def send_startup_message():
