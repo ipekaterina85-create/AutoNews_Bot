@@ -19,7 +19,7 @@ from deep_translator import GoogleTranslator
 # Устанавливаем timeout для всех запросов
 socket.setdefaulttimeout(30)
 
-# Отключаем строгую проверку SSL (для проблемных источников)
+# Отключаем строгую проверку SSL
 try:
     ssl._create_default_https_context = ssl._create_unverified_context
 except:
@@ -33,16 +33,17 @@ BOT_TOKEN = os.environ.get('BOT_TOKEN')
 CHANNEL_ID = os.environ.get('CHANNEL_ID')
 
 CHECK_INTERVAL = int(os.environ.get('CHECK_INTERVAL', 1800))
-NEWS_PER_SOURCE = int(os.environ.get('NEWS_PER_SOURCE', 5))
+NEWS_PER_SOURCE = int(os.environ.get('NEWS_PER_SOURCE', 3))
 MAX_DESCRIPTION_LENGTH = int(os.environ.get('MAX_DESCRIPTION_LENGTH', 600))
 ENABLE_TRANSLATION = os.environ.get('ENABLE_TRANSLATION', 'true').lower() == 'true'
 ENABLE_IMAGES = os.environ.get('ENABLE_IMAGES', 'true').lower() == 'true'
 ENABLE_HASHTAGS = os.environ.get('ENABLE_HASHTAGS', 'true').lower() == 'true'
-MIN_SCORE = int(os.environ.get('MIN_SCORE', 3))
+MIN_SCORE = int(os.environ.get('MIN_SCORE', 5))
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
 
-# 🏁 ЛИМИТ СПОРТИВНЫХ НОВОСТЕЙ
-MOTORSPORT_DAILY_LIMIT = int(os.environ.get('MOTORSPORT_DAILY_LIMIT', 5))
+# 🎯 ЛИМИТЫ
+DAILY_POST_LIMIT = int(os.environ.get('DAILY_POST_LIMIT', 8))
+MOTORSPORT_DAILY_LIMIT = int(os.environ.get('MOTORSPORT_DAILY_LIMIT', 2))
 
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN не установлен!")
@@ -73,13 +74,13 @@ bot = TeleBot(BOT_TOKEN)
 apihelper.ENABLE_MIDDLEWARE = True
 
 # ============================================
-# GOOGLE TRANSLATE через deep-translator
+# GOOGLE TRANSLATE
 # ============================================
 
 from deep_translator import GoogleTranslator
 
 class GoogleTranslatorPro:
-    """Профессиональный переводчик на базе Google Translate"""
+    """Профессиональный переводчик"""
     
     def __init__(self):
         self.translator = GoogleTranslator(source='auto', target='ru')
@@ -347,16 +348,16 @@ else:
     logger.info("Перевод отключён")
 
 # ============================================
-# ВСЕ RSS-ИСТОЧНИКИ
+# RSS-ИСТОЧНИКИ (ТОЛЬКО РАБОЧИЕ, БЕЗ УЗБЕКИСТАНА)
 # ============================================
 
 RSS_FEEDS = [
-    # 🇷🇺 РОССИЯ
+    # 🇷 РОССИЯ
     {
         'name': 'Дром',
         'url': 'https://www.drom.ru/export/xml/news.rss',
         'lang': 'ru',
-        'region': '🇷🇺',
+        'region': '🇺',
         'country': 'russia',
         'priority': 'high',
         'weight': 2.0,
@@ -366,7 +367,7 @@ RSS_FEEDS = [
         'name': 'Ведомости Авто',
         'url': 'https://www.vedomosti.ru/rss/rubric/auto',
         'lang': 'ru',
-        'region': '🇷🇺',
+        'region': '🇺',
         'country': 'russia',
         'priority': 'high',
         'weight': 2.0,
@@ -376,7 +377,7 @@ RSS_FEEDS = [
         'name': 'Автостат',
         'url': 'https://www.autostat.ru/news/rss/',
         'lang': 'ru',
-        'region': '🇺',
+        'region': '🇷🇺',
         'country': 'russia',
         'priority': 'medium',
         'weight': 1.5,
@@ -386,7 +387,7 @@ RSS_FEEDS = [
         'name': 'Коммерсантъ Автопилот',
         'url': 'https://www.kommersant.ru/RSS/auto.xml',
         'lang': 'ru',
-        'region': '🇺',
+        'region': '🇷🇺',
         'country': 'russia',
         'priority': 'medium',
         'weight': 1.5,
@@ -395,17 +396,17 @@ RSS_FEEDS = [
     
     # 🇧🇾 БЕЛАРУСЬ
     {
-        'name': 'Onliner Авто (Беларусь)',
+        'name': 'Onliner Авто',
         'url': 'https://auto.onliner.by/feed',
         'lang': 'ru',
-        'region': '🇾',
+        'region': '🇧🇾',
         'country': 'belarus',
         'priority': 'high',
         'weight': 1.8,
         'category': 'cis'
     },
     {
-        'name': 'ABW.BY (Беларусь)',
+        'name': 'ABW.BY',
         'url': 'https://www.abw.by/rss',
         'lang': 'ru',
         'region': '🇧🇾',
@@ -415,7 +416,7 @@ RSS_FEEDS = [
         'category': 'cis'
     },
     {
-        'name': 'AV.BY (Беларусь)',
+        'name': 'AV.BY',
         'url': 'https://av.by/rss',
         'lang': 'ru',
         'region': '🇧🇾',
@@ -425,9 +426,9 @@ RSS_FEEDS = [
         'category': 'cis'
     },
     
-    # 🇰🇿 КАЗАХСТАН
+    # 🇰 КАЗАХСТАН
     {
-        'name': 'Kolesa (Казахстан)',
+        'name': 'Kolesa.kz',
         'url': 'https://kolesa.kz/rss/',
         'lang': 'ru',
         'region': '🇰🇿',
@@ -436,20 +437,10 @@ RSS_FEEDS = [
         'weight': 1.8,
         'category': 'cis'
     },
-    {
-        'name': 'Krisha (Казахстан)',
-        'url': 'https://krisha.kz/rss/',
-        'lang': 'ru',
-        'region': '🇰',
-        'country': 'kazakhstan',
-        'priority': 'high',
-        'weight': 1.8,
-        'category': 'cis'
-    },
     
     # 🇦🇲 АРМЕНИЯ
     {
-        'name': 'News.am Авто (Армения)',
+        'name': 'News.am Авто',
         'url': 'https://news.am/rss/auto/ru',
         'lang': 'ru',
         'region': '🇦🇲',
@@ -459,9 +450,9 @@ RSS_FEEDS = [
         'category': 'cis'
     },
     
-    # 🇦 АЗЕРБАЙДЖАН
+    # 🇿 АЗЕРБАЙДЖАН
     {
-        'name': '1news.az Авто (Азербайджан)',
+        'name': '1news.az Авто',
         'url': 'https://1news.az/rss.php?lang=ru&cat=auto',
         'lang': 'ru',
         'region': '🇦🇿',
@@ -471,24 +462,12 @@ RSS_FEEDS = [
         'category': 'cis'
     },
     
-    # 🇺🇿 УЗБЕКИСТАН
+    # 🇰 КЫРГЫЗСТАН
     {
-        'name': 'Kun.uz Авто (Узбекистан)',
-        'url': 'https://kun.uz/ru/news/rss?category=auto',
-        'lang': 'ru',
-        'region': '🇿',
-        'country': 'uzbekistan',
-        'priority': 'medium',
-        'weight': 1.3,
-        'category': 'cis'
-    },
-    
-    # 🇰🇬 КЫРГЫЗСТАН
-    {
-        'name': 'Kolesa KG (Кыргызстан)',
+        'name': 'Kolesa.kg',
         'url': 'https://kolesa.kg/rss/',
         'lang': 'ru',
-        'region': '🇰🇬',
+        'region': '🇰',
         'country': 'kyrgyzstan',
         'priority': 'medium',
         'weight': 1.3,
@@ -497,7 +476,7 @@ RSS_FEEDS = [
     
     # 🇲🇩 МОЛДОВА
     {
-        'name': 'Auto.MD (Молдова)',
+        'name': 'Auto.MD',
         'url': 'https://auto.md/feed/',
         'lang': 'ru',
         'region': '🇩',
@@ -524,7 +503,7 @@ RSS_FEEDS = [
         'region': '🇧',
         'country': 'uk',
         'priority': 'medium',
-        'weight': 1
+        'weight': 1.0
     },
     
     # 🇺🇸 США
@@ -532,7 +511,7 @@ RSS_FEEDS = [
         'name': 'Car and Driver',
         'url': 'https://www.caranddriver.com/rss/all.xml/',
         'lang': 'en',
-        'region': '🇺🇸',
+        'region': '🇺',
         'country': 'usa',
         'priority': 'high',
         'weight': 1.5
@@ -550,7 +529,7 @@ RSS_FEEDS = [
         'name': 'Road & Track',
         'url': 'https://www.roadandtrack.com/rss/all.xml/',
         'lang': 'en',
-        'region': '🇺🇸',
+        'region': '🇸',
         'country': 'usa',
         'priority': 'high',
         'weight': 1.5
@@ -574,17 +553,17 @@ RSS_FEEDS = [
         'country': 'world',
         'priority': 'high',
         'category': 'electric',
-        'weight': 2
+        'weight': 2.0
     },
     {
         'name': 'CleanTechnica',
         'url': 'https://cleantechnica.com/feed/',
         'lang': 'en',
-        'region': '',
+        'region': '🌍',
         'country': 'world',
         'priority': 'high',
         'category': 'electric',
-        'weight': 2
+        'weight': 2.0
     },
     {
         'name': 'Green Car Reports',
@@ -594,10 +573,10 @@ RSS_FEEDS = [
         'country': 'world',
         'priority': 'high',
         'category': 'electric',
-        'weight': 2
+        'weight': 2.0
     },
     
-    # 🏁 АВТОСПОРТ (ЛИМИТ: 5 новостей в сутки)
+    # 🏁 АВТОСПОРТ (ЛИМИТ: 2 в сутки)
     {
         'name': 'Autosport',
         'url': 'https://www.autosport.com/rss/feed/all',
@@ -626,11 +605,11 @@ RSS_FEEDS = [
         'name': 'Supercar Blondie',
         'url': 'https://supercarblondie.com/feed/',
         'lang': 'en',
-        'region': '🌍',
+        'region': '',
         'country': 'world',
         'priority': 'high',
         'category': 'luxury',
-        'weight': 2
+        'weight': 2.0
     },
     
     # 📰 НОВОСТНЫЕ АГЕНТСТВА
@@ -638,7 +617,7 @@ RSS_FEEDS = [
         'name': 'CNBC Autos',
         'url': 'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=15837362',
         'lang': 'en',
-        'region': '🇺',
+        'region': '🇺🇸',
         'country': 'usa',
         'priority': 'high',
         'weight': 1.5
@@ -650,7 +629,7 @@ RSS_FEEDS = [
 # ============================================
 
 HOT_KEYWORDS = {
-    # 🇷🇺 РОССИЯ
+    # 🇺 РОССИЯ
     'lada': 4, 'лада': 4, 'ваз': 4, 'уаз': 4, 'камаз': 4,
     'aurus': 4, 'москвич': 4, 'европротокол': 4,
     'россия': 3, 'российский': 3, 'российская': 3,
@@ -667,10 +646,9 @@ HOT_KEYWORDS = {
     'миллион': 2, 'миллиард': 2,
     'электрокар': 3, 'электромобиль': 3,
     
-    # 🇧🇾🇰🇿🇦🇲🇦🇿🇺🇿🇰🇬🇲🇩 СНГ
+    # 🇧🇰🇿🇦🇦🇿🇰🇲🇩 СНГ
     'беларусь': 3, 'белоруссия': 3, 'минск': 2,
     'казахстан': 3, 'казахский': 2, 'алматы': 2, 'астана': 2,
-    'узбекистан': 3, 'узбекский': 2, 'ташкент': 2,
     'армения': 3, 'армянский': 2, 'ереван': 2,
     'азербайджан': 3, 'азербайджанский': 2, 'баку': 2,
     'кыргызстан': 3, 'киргизия': 3, 'бишкек': 2,
@@ -719,13 +697,13 @@ CATEGORIES = {
         'keywords': ['lada', 'лада', 'ваз', 'уаз', 'камаз', 'aurus', 'москвич', 
                      'автоваз', 'россия', 'российский', 'chery', 'haval', 'geely',
                      'штраф', 'пдд', 'гибдд', 'отзыв', 'дилер', 'акциз'],
-        'emoji': '🇷🇺',
+        'emoji': '🇷',
         'name': 'Россия'
     },
     'cis': {
-        'keywords': ['беларусь', 'белоруссия', 'казахстан', 'узбекистан', 'армения',
+        'keywords': ['беларусь', 'белоруссия', 'казахстан', 'армения',
                      'азербайджан', 'кыргызстан', 'молдова', 'грузия', 'минск',
-                     'алматы', 'астана', 'ташкент', 'ереван', 'баку', 'бишкек', 'кишинев'],
+                     'алматы', 'астана', 'ереван', 'баку', 'бишкек', 'кишинев'],
         'emoji': '🌐',
         'name': 'СНГ/ЕАЭС'
     },
@@ -781,7 +759,7 @@ def calculate_news_score(entry, feed_info):
         score *= 1.1
     
     if feed_info.get('country') in ['belarus', 'kazakhstan', 'armenia', 'azerbaijan', 
-                                     'uzbekistan', 'kyrgyzstan', 'moldova']:
+                                     'kyrgyzstan', 'moldova']:
         score *= 1.1
     
     return round(score, 2), matched_keywords
@@ -844,7 +822,7 @@ def cleanup_published_file():
         logger.error(f"Ошибка очистки: {e}")
 
 # ============================================
-# ХРАНИЛИЩЕ ДЛЯ ДЕДУПЛИКАЦИИ (МЕЖЦИКЛОВОЕ)
+# ХРАНИЛИЩЕ ДЛЯ ДЕДУПЛИКАЦИИ
 # ============================================
 
 DUPLICATES_FILE = 'published_titles.txt'
@@ -881,17 +859,52 @@ def cleanup_duplicates_file():
         logger.error(f"Ошибка очистки файла дубликатов: {e}")
 
 # ============================================
-# СЧЁТЧИК СПОРТИВНЫХ НОВОСТЕЙ (5 В СУТКИ)
+# СЧЁТЧИКИ (ДНЕВНЫЕ ЛИМИТЫ)
 # ============================================
 
-MOTORSPORT_COUNT_FILE = 'motorsport_daily_count.txt'
-
 def get_today_str():
-    """Возвращает сегодняшнюю дату в формате YYYY-MM-DD"""
     return datetime.now().strftime('%Y-%m-%d')
 
+# Счётчик общих постов
+DAILY_POST_COUNT_FILE = 'daily_post_count.txt'
+
+def load_daily_post_count():
+    today = get_today_str()
+    if os.path.exists(DAILY_POST_COUNT_FILE):
+        try:
+            with open(DAILY_POST_COUNT_FILE, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+                if content:
+                    parts = content.split(' ')
+                    if len(parts) == 2 and parts[0] == today:
+                        return int(parts[1])
+        except Exception as e:
+            logger.error(f"Ошибка загрузки счётчика постов: {e}")
+    return 0
+
+def save_daily_post_count(count):
+    today = get_today_str()
+    try:
+        with open(DAILY_POST_COUNT_FILE, 'w', encoding='utf-8') as f:
+            f.write(f"{today} {count}")
+    except Exception as e:
+        logger.error(f"Ошибка сохранения счётчика постов: {e}")
+
+def increment_daily_post_count():
+    current = load_daily_post_count()
+    new_count = current + 1
+    save_daily_post_count(new_count)
+    return new_count
+
+def get_daily_post_remaining():
+    current = load_daily_post_count()
+    remaining = DAILY_POST_LIMIT - current
+    return max(0, remaining)
+
+# Счётчик спортивных новостей
+MOTORSPORT_COUNT_FILE = 'motorsport_daily_count.txt'
+
 def load_motorsport_count():
-    """Загружает счётчик спортивных новостей за сегодня"""
     today = get_today_str()
     if os.path.exists(MOTORSPORT_COUNT_FILE):
         try:
@@ -906,7 +919,6 @@ def load_motorsport_count():
     return 0
 
 def save_motorsport_count(count):
-    """Сохраняет счётчик спортивных новостей"""
     today = get_today_str()
     try:
         with open(MOTORSPORT_COUNT_FILE, 'w', encoding='utf-8') as f:
@@ -915,14 +927,12 @@ def save_motorsport_count(count):
         logger.error(f"Ошибка сохранения счётчика спорта: {e}")
 
 def increment_motorsport_count():
-    """Увеличивает счётчик на 1 и возвращает новое значение"""
     current = load_motorsport_count()
     new_count = current + 1
     save_motorsport_count(new_count)
     return new_count
 
 def get_motorsport_remaining():
-    """Возвращает количество оставшихся слотов для спортивных новостей"""
     current = load_motorsport_count()
     remaining = MOTORSPORT_DAILY_LIMIT - current
     return max(0, remaining)
@@ -1004,7 +1014,6 @@ def generate_hashtags(entry, feed_info):
             'kazakhstan': '#казахстан',
             'armenia': '#армения',
             'azerbaijan': '#азербайджан',
-            'uzbekistan': '#узбекистан',
             'kyrgyzstan': '#кыргызстан',
             'moldova': '#молдова'
         }
@@ -1056,7 +1065,7 @@ def format_message(entry, feed_info, score, category):
     cat_name = category['name']
     
     if score >= 7:
-        hot_indicator = "🔥🔥 *ГОРЯЧАЯ НОВОСТЬ*\n\n"
+        hot_indicator = "🔥🔥🔥 *ГОРЯЧАЯ НОВОСТЬ*\n\n"
     elif score >= 5:
         hot_indicator = "🔥🔥 *ТОП*\n\n"
     elif score >= 3:
@@ -1071,9 +1080,9 @@ def format_message(entry, feed_info, score, category):
         message += f"{translated_summary}\n\n"
     
     message += "━━━━━━━━━━━━━━━━━━━\n"
-    message += f" Рейтинг: {score}/10\n"
+    message += f"📊 Рейтинг: {score}/10\n"
     message += f"📰 Источник: {source_name} {region}\n"
-    message += f"🏷️ Категория: {cat_name}\n"
+    message += f"️ Категория: {cat_name}\n"
     message += f"\n🔗 [Читать полностью]({link})\n\n"
     
     hashtags = generate_hashtags(entry, feed_info)
@@ -1119,49 +1128,39 @@ def send_news_to_channel(message, image_url=None):
 # ============================================
 
 def generate_news_key(entry):
-    """
-    Создаёт уникальный ключ новости с УЛУЧШЕННОЙ нормализацией.
-    """
     title = entry.get('title', '').lower().strip()
     link = entry.get('link', '').strip()
     summary = entry.get('summary', '').lower()
     
-    # 1. Ключ из URL
     url_key = hashlib.md5(link.encode('utf-8')).hexdigest() if link else ''
     
-    # 2. УЛУЧШЕННАЯ нормализация заголовка
-    # Удаляем всё кроме букв, цифр и пробелов
     normalized_title = re.sub(r'[^\w\sа-яa-z0-9]', '', title)
-    # Удаляем лишние пробелы
     normalized_title = re.sub(r'\s+', ' ', normalized_title).strip()
-    # Удаляем стоп-слова
-    stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
-                  'of', 'with', 'by', 'from', 'is', 'are', 'was', 'were', 'be', 'been',
-                  'в', 'на', 'с', 'к', 'по', 'под', 'над', 'для', 'от', 'до',
-                  'и', 'или', 'но', 'а', 'да', 'же', 'ли', 'бы', 'будет', 'будут',
-                  'был', 'была', 'было', 'были', 'есть', 'быть',
-                  'новый', 'новая', 'новое', 'новые', 'обзор', 'фото', 'фотографии'}
-    words = normalized_title.split()
-    filtered_words = [w for w in words if w not in stop_words and len(w) > 2]
-    normalized_title = ' '.join(filtered_words)
-    
     title_key = hashlib.md5(normalized_title.encode('utf-8')).hexdigest()
     
-    # 3. Ключевые слова
     text = f"{title} {summary}"
     text = re.sub('<[^<]+?>', '', text)
+    
+    stop_words = {
+        'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+        'of', 'with', 'by', 'from', 'is', 'are', 'was', 'were', 'be', 'been',
+        'в', 'на', 'с', 'к', 'по', 'под', 'над', 'для', 'от', 'до',
+        'и', 'или', 'но', 'а', 'да', 'же', 'ли', 'бы', 'будет', 'будут',
+        'был', 'была', 'было', 'были', 'есть', 'быть',
+        'новый', 'новая', 'новое', 'новые',
+        'фото', 'фотографии', 'обзор', 'представлен', 'представлена'
+    }
     
     words = re.findall(r'\b[a-zA-Zа-яА-Я0-9]{4,}\b', text)
     key_words = [w.lower() for w in words if w.lower() not in stop_words]
     unique_words = list(dict.fromkeys(key_words))[:15]
     words_key = '_'.join(sorted(unique_words))
     
-    # 4. Бренды
     brands = ['tesla', 'bmw', 'mercedes', 'audi', 'porsche', 'ferrari', 
               'lamborghini', 'bugatti', 'mclaren', 'corvette', 'chevrolet',
               'ford', 'toyota', 'honda', 'nissan', 'mazda', 'lexus',
               'lada', 'уаз', 'камаз', 'автоваз', 'byd', 'nio', 'xpeng',
-              'geely', 'chery', 'haval', 'changan', 'exeed', 'jeep', 'avenger']
+              'geely', 'chery', 'haval', 'changan', 'exeed']
     
     found_brands = [brand for brand in brands if brand in text.lower()]
     brands_key = '_'.join(sorted(found_brands))
@@ -1177,9 +1176,6 @@ def generate_news_key(entry):
     }
 
 def remove_duplicates(news_list, time_window_hours=48):
-    """
-    УСИЛЕННАЯ дедупликация с множеством проверок.
-    """
     if not news_list:
         return news_list
     
@@ -1187,11 +1183,10 @@ def remove_duplicates(news_list, time_window_hours=48):
     
     unique_news = []
     seen_urls = set()
-    seen_exact_titles = set()  # НОВОЕ: точные заголовки
-    seen_normalized_titles = {}  # нормализованные заголовки
+    seen_titles = {}
     seen_combinations = {}
     
-    logger.info(f"🔍 Начинаю усиленную дедупликацию {len(news_list)} новостей...")
+    logger.info(f"🔍 Начинаю дедупликацию {len(news_list)} новостей...")
     logger.info(f"📚 В базе {len(published_titles)} ранее опубликованных заголовков")
     
     for news_data in news_list:
@@ -1204,44 +1199,30 @@ def remove_duplicates(news_list, time_window_hours=48):
         duplicate_reason = None
         matched_with = None
         
-        # ПРОВЕРКА 1: По ранее опубликованным (межцикловая)
         if news_key.get('normalized_title'):
             norm_title = news_key['normalized_title']
             if norm_title in published_titles:
                 is_duplicate = True
                 duplicate_reason = "ALREADY_PUBLISHED"
                 matched_with = "уже опубликовано ранее"
-                logger.info(f"⏭️ Пропуск (уже было): {title[:80]}...")
         
-        # ПРОВЕРКА 2: Точное совпадение URL
         if not is_duplicate and link:
             if link in seen_urls:
                 is_duplicate = True
                 duplicate_reason = "URL"
                 matched_with = "тот же URL"
         
-        # ПРОВЕРКА 3: ТОЧНОЕ совпадение заголовка (НОВОЕ!)
-        if not is_duplicate and title:
-            if title in seen_exact_titles:
-                is_duplicate = True
-                duplicate_reason = "EXACT_TITLE"
-                matched_with = "точное совпадение заголовка"
-                logger.info(f"⏭️ Пропуск (точный заголовок): {title[:80]}...")
-        
-        # ПРОВЕРКА 4: Нормализованное совпадение заголовка
         if not is_duplicate and news_key.get('normalized_title'):
             norm_title = news_key['normalized_title']
-            if norm_title in seen_normalized_titles:
+            if norm_title in seen_titles:
                 is_duplicate = True
-                duplicate_reason = "NORMALIZED_TITLE"
-                matched_with = "нормализованное совпадение"
-                logger.info(f"️ Пропуск (нормализованный): {title[:80]}...")
+                duplicate_reason = "TITLE_EXACT"
+                matched_with = "тот же заголовок"
         
-        # ПРОВЕРКА 5: Схожесть заголовков (Jaccard)
         if not is_duplicate and news_key.get('normalized_title'):
             current_words = set(news_key['normalized_title'].split())
             
-            for seen_title, seen_data in seen_normalized_titles.items():
+            for seen_title, seen_data in seen_titles.items():
                 seen_words = set(seen_title.split())
                 
                 if current_words and seen_words:
@@ -1255,7 +1236,6 @@ def remove_duplicates(news_list, time_window_hours=48):
                         matched_with = f"схожесть заголовков {similarity:.0%}"
                         break
         
-        # ПРОВЕРКА 6: Одинаковые бренды + контент
         if not is_duplicate and news_key.get('brands_key') and news_key.get('words_key'):
             current_brands = news_key['brands_key']
             current_words = set(news_key['words_key'].split('_'))
@@ -1280,7 +1260,6 @@ def remove_duplicates(news_list, time_window_hours=48):
             logger.warning(f"   Заголовок: {title[:80]}...")
             logger.warning(f"   Причина: {matched_with}")
             
-            # Выбираем лучшую версию
             if duplicate_reason != "ALREADY_PUBLISHED":
                 for i, item in enumerate(unique_news):
                     item_key = item.get('news_key', {})
@@ -1297,11 +1276,8 @@ def remove_duplicates(news_list, time_window_hours=48):
             if link:
                 seen_urls.add(link)
             
-            if title:
-                seen_exact_titles.add(title)  # НОВОЕ
-            
             if news_key.get('normalized_title'):
-                seen_normalized_titles[news_key['normalized_title']] = news_data
+                seen_titles[news_key['normalized_title']] = news_data
                 save_published_title(news_key['normalized_title'])
             
             if news_key.get('brands_key') and news_key.get('words_key'):
@@ -1327,9 +1303,17 @@ def fetch_and_publish():
     
     all_news = []
     
-    # 🏁 Проверяем остаток слотов для спортивных новостей
+    # Проверяем лимиты
+    daily_remaining = get_daily_post_remaining()
     motorsport_remaining = get_motorsport_remaining()
-    logger.info(f"🏁 Осталось слотов для спорта сегодня: {motorsport_remaining}/{MOTORSPORT_DAILY_LIMIT}")
+    
+    logger.info(f" Осталось слотов на сегодня: {daily_remaining}/{DAILY_POST_LIMIT}")
+    logger.info(f"🏁 Осталось слотов для спорта: {motorsport_remaining}/{MOTORSPORT_DAILY_LIMIT}")
+    
+    # Если дневной лимит достигнут — пропускаем цикл
+    if daily_remaining <= 0:
+        logger.info(f"⏭️ Дневной лимит постов достигнут ({DAILY_POST_LIMIT}/день). Пропускаем цикл.")
+        return 0, 0
     
     logger.info(f"Начинаем проверку {len(RSS_FEEDS)} источников...")
     
@@ -1355,7 +1339,6 @@ def fetch_and_publish():
             
             working_sources += 1
             
-            # 🏁 Применяем лимит на количество новостей для спортивных источников
             source_limit = feed_info.get('max_per_cycle', NEWS_PER_SOURCE)
             logger.info(f"✅ {feed_info['name']}: найдено {len(feed.entries)} новостей (лимит: {source_limit})")
             
@@ -1381,7 +1364,7 @@ def fetch_and_publish():
                         'category': category_info
                     })
                 except Exception as e:
-                    logger.warning(f"⚠️ Ошибка обработки новости: {e}")
+                    logger.warning(f"️ Ошибка обработки новости: {e}")
                     continue
                         
         except Exception as e:
@@ -1389,15 +1372,23 @@ def fetch_and_publish():
             failed_sources += 1
             continue
     
+    # Сортируем по рейтингу (от большего к меньшему)
     all_news.sort(key=lambda x: x['score'], reverse=True)
     
     logger.info(f"📊 Рабочих источников: {working_sources} | Не рабочих: {failed_sources}")
     logger.info(f"📰 Собрано {len(all_news)} новостей до дедупликации")
     
+    # Дедупликация
     all_news = remove_duplicates(all_news)
     logger.info(f"✨ После дедупликации: {len(all_news)} уникальных новостей")
     
-    # Балансировка с лимитом на спорт
+    # Берём только ТОП-8 новостей (или сколько осталось слотов)
+    max_to_publish = min(daily_remaining, 8)
+    all_news = all_news[:max_to_publish]
+    
+    logger.info(f"🎯 Отобрано ТОП-{len(all_news)} новостей для публикации")
+    
+    # Балансировка по категориям
     russian_count = 0
     foreign_count = 0
     cis_count = 0
@@ -1407,26 +1398,26 @@ def fetch_and_publish():
     for news_data in all_news:
         score = news_data['score']
         country = news_data['feed_info'].get('country', 'world')
-        category_id = news_data['category'].get('name', 'Новости') if isinstance(news_data['category'], dict) else news_data['category']
         is_russian = country == 'russia'
         is_cis = country in ['belarus', 'kazakhstan', 'armenia', 'azerbaijan', 
-                              'uzbekistan', 'kyrgyzstan', 'moldova']
+                              'kyrgyzstan', 'moldova']
         is_motorsport = 'motorsport' in news_data['feed_info'].get('category', '')
         
         if score < MIN_SCORE:
             skipped_count += 1
             continue
         
-        #  ЛИМИТ СПОРТИВНЫХ НОВОСТЕЙ
+        # Лимит спортивных новостей
         if is_motorsport:
             if motorsport_count >= motorsport_remaining:
                 skipped_count += 1
-                logger.info(f"🏁 Пропуск спорта (лимит {MOTORSPORT_DAILY_LIMIT}/сутки достигнут): {news_data['entry'].get('title', '')[:50]}")
+                logger.info(f" Пропуск спорта (лимит {MOTORSPORT_DAILY_LIMIT}/сутки): {news_data['entry'].get('title', '')[:50]}")
                 continue
             motorsport_count += 1
         
+        # Балансировка: не более 50% российских новостей
         if is_russian:
-            if foreign_count + cis_count >= russian_count * 5:
+            if foreign_count + cis_count >= russian_count:
                 russian_count += 1
             else:
                 skipped_count += 1
@@ -1439,13 +1430,20 @@ def fetch_and_publish():
         
         published_news.append(news_data)
         
-        if len(published_news) >= 15:
+        if len(published_news) >= max_to_publish:
             break
     
     logger.info(f"📝 Отобрано {len(published_news)} новостей для публикации")
-    logger.info(f"🏁 Спортивных новостей в этом цикле: {motorsport_count}")
+    logger.info(f"🏁 Спортивных новостей: {motorsport_count}")
+    
+    # Публикуем
+    posts_published_today = 0
     
     for news_data in published_news:
+        if posts_published_today >= daily_remaining:
+            logger.info(f"⏭️ Дневной лимит постов достигнут ({DAILY_POST_LIMIT}/день)")
+            break
+        
         try:
             entry = news_data['entry']
             feed_info = news_data['feed_info']
@@ -1461,43 +1459,48 @@ def fetch_and_publish():
                 normalized_title = news_key.get('normalized_title', '')
                 save_published(news_id, normalized_title)
                 
-                # 🏁 Увеличиваем счётчик спортивных новостей
+                posts_published_today += 1
+                new_daily_count = increment_daily_post_count()
+                
                 if 'motorsport' in feed_info.get('category', ''):
                     new_motorsport_count = increment_motorsport_count()
                     logger.info(f"🏁 Спортивная новость #{new_motorsport_count}/{MOTORSPORT_DAILY_LIMIT} за сегодня")
                 
                 new_count += 1
                 country = feed_info.get('country', 'world')
-                flag = {'russia': '🇺', 'belarus': '🇾', 'kazakhstan': '🇿',
-                        'armenia': '🇦🇲', 'azerbaijan': '🇦🇿', 'uzbekistan': '🇺🇿',
-                        'kyrgyzstan': '🇰🇬', 'moldova': '🇲'}.get(country, '')
+                flag = {'russia': '🇷🇺', 'belarus': '🇧🇾', 'kazakhstan': '🇰🇿',
+                        'armenia': '🇦🇲', 'azerbaijan': '🇦', 
+                        'kyrgyzstan': '🇬', 'moldova': '🇲🇩'}.get(country, '')
                 source_name = feed_info.get('name', 'Unknown')
                 logger.info(f"✅ [{flag}] {source_name} (рейтинг {score:.2f}): {title[:50]}...")
+                logger.info(f"📊 Пост {new_daily_count}/{DAILY_POST_LIMIT} за сегодня")
                 time.sleep(3)
             else:
                 error_count += 1
         except Exception as e:
-            logger.error(f" Ошибка публикации: {e}")
+            logger.error(f"❌ Ошибка публикации: {e}")
             error_count += 1
             continue
     
-    logger.info(f"📈 Итог: ✅{new_count} | 🇷🇺{russian_count} | СНГ{cis_count} | 🌍{foreign_count} | 🏁{motorsport_count} | ⏭️{skipped_count} | ❌{error_count}")
+    logger.info(f"📈 Итог: ✅{new_count} | 🇺{russian_count} | СНГ{cis_count} | 🌍{foreign_count} | 🏁{motorsport_count} | ️{skipped_count} | ❌{error_count}")
+    logger.info(f"📊 Опубликовано сегодня: {posts_published_today}/{DAILY_POST_LIMIT}")
     return new_count, error_count
 
 def send_startup_message():
     try:
         startup_message = (
             "🤖 *Auto imPulse News Bot запущен!*\n\n"
-            f" Источников: {len(RSS_FEEDS)}\n"
+            f"📡 Источников: {len(RSS_FEEDS)}\n"
             f"🌍 Страны: Россия, Беларусь, Казахстан, Армения,\n"
-            f"      Азербайджан, Узбекистан, Кыргызстан, Молдова\n"
+            f"      Азербайджан, Кыргызстан, Молдова\n"
             f"      + Великобритания, США, мир\n"
-            f"⏱️ Интервал: {CHECK_INTERVAL // 60} мин\n"
+            f"️ Интервал: {CHECK_INTERVAL // 60} мин\n"
             f"📈 Мин. рейтинг: {MIN_SCORE}/10\n"
-            f"🌐 Перевод: {'✅ Google Translate' if ENABLE_TRANSLATION else '❌'}\n"
-            f"🖼️ Изображения: {'✅' if ENABLE_IMAGES else ''}\n"
-            f"🏷️ Хештеги: {'✅' if ENABLE_HASHTAGS else '❌'}\n"
-            f"🏁 Лимит спорта: {MOTORSPORT_DAILY_LIMIT}/сутки\n\n"
+            f"🌐 Перевод: {'✅ Google Translate' if ENABLE_TRANSLATION else ''}\n"
+            f"🖼️ Изображения: {'✅' if ENABLE_IMAGES else '❌'}\n"
+            f"️ Хештеги: {'✅' if ENABLE_HASHTAGS else '❌'}\n"
+            f"🏁 Лимит спорта: {MOTORSPORT_DAILY_LIMIT}/сутки\n"
+            f"📊 Дневной лимит постов: {DAILY_POST_LIMIT}/сутки\n\n"
             f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
         logger.info("Бот успешно запущен!")
@@ -1530,7 +1533,7 @@ def check_channel_access():
             logger.error(f"❌ Бот не админ!")
             return False
     except Exception as e:
-        logger.error(f"❌ Ошибка канала: {e}")
+        logger.error(f" Ошибка канала: {e}")
         return False
 
 def main():
@@ -1564,3 +1567,4 @@ if __name__ == "__main__":
     except Exception as e:
         logger.critical(f"Фатальная ошибка: {e}", exc_info=True)
         sys.exit(1)
+        
