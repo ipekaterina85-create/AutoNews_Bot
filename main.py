@@ -7,6 +7,7 @@ import signal
 import sys
 import socket
 import ssl
+import math
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -41,14 +42,25 @@ ENABLE_HASHTAGS = os.environ.get('ENABLE_HASHTAGS', 'true').lower() == 'true'
 MIN_SCORE = int(os.environ.get('MIN_SCORE', 5))
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
 
-#  ЛИМИТЫ
-DAILY_POST_LIMIT = int(os.environ.get('DAILY_POST_LIMIT', 8))
+# 🎯 ЛИМИТЫ
+DAILY_POST_LIMIT = int(os.environ.get('DAILY_POST_LIMIT', 25))  # 25 постов в день
 MOTORSPORT_DAILY_LIMIT = int(os.environ.get('MOTORSPORT_DAILY_LIMIT', 2))
 
 # 🌙 НОЧНОЙ РЕЖИМ (по Московскому времени, UTC+3)
 MOSCOW_TZ = timezone(timedelta(hours=3))
 PUBLISH_START_HOUR = int(os.environ.get('PUBLISH_START_HOUR', 7))
 PUBLISH_END_HOUR = int(os.environ.get('PUBLISH_END_HOUR', 24))
+
+# 🕐 ГИБКИЕ ЧАСЫ ПУБЛИКАЦИИ (пиковые часы)
+# В эти часы публикуем 1 пост за цикл
+PEAK_HOURS = [
+    (7, 10),    # Утренний пик: 07:00-10:00
+    (11, 14),   # Обеденный пик: 11:00-14:00
+    (17, 22),   # Вечерний пик: 17:00-22:00
+]
+
+# Максимум постов за один цикл
+MAX_POSTS_PER_CYCLE = 1
 
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN не установлен!")
@@ -333,14 +345,14 @@ if ENABLE_TRANSLATION:
         translator = GoogleTranslatorPro()
         logger.info(f"✅ Google Translator Pro инициализирован")
     except Exception as e:
-        logger.error(f" Ошибка инициализации Google Translator: {e}")
+        logger.error(f"❌ Ошибка инициализации Google Translator: {e}")
         translator = None
         ENABLE_TRANSLATION = False
 else:
     logger.info("Перевод отключён")
 
 # ============================================
-# RSS-ИСТОЧНИКИ (ТОЛЬКО РАБОЧИЕ, БЕЗ УЗБЕКИСТАНА)
+# RSS-ИСТОЧНИКИ
 # ============================================
 
 RSS_FEEDS = [
@@ -349,7 +361,7 @@ RSS_FEEDS = [
         'name': 'Дром',
         'url': 'https://www.drom.ru/export/xml/news.rss',
         'lang': 'ru',
-        'region': '🇷',
+        'region': '🇷🇺',
         'country': 'russia',
         'priority': 'high',
         'weight': 2.0,
@@ -369,7 +381,7 @@ RSS_FEEDS = [
         'name': 'Автостат',
         'url': 'https://www.autostat.ru/news/rss/',
         'lang': 'ru',
-        'region': '🇺',
+        'region': '🇷🇺',
         'country': 'russia',
         'priority': 'medium',
         'weight': 1.5,
@@ -411,7 +423,7 @@ RSS_FEEDS = [
         'name': 'AV.BY',
         'url': 'https://av.by/rss',
         'lang': 'ru',
-        'region': '🇧🇾',
+        'region': '🇾',
         'country': 'belarus',
         'priority': 'medium',
         'weight': 1.5,
@@ -447,7 +459,7 @@ RSS_FEEDS = [
         'name': '1news.az Авто',
         'url': 'https://1news.az/rss.php?lang=ru&cat=auto',
         'lang': 'ru',
-        'region': '🇿',
+        'region': '🇦🇿',
         'country': 'azerbaijan',
         'priority': 'medium',
         'weight': 1.3,
@@ -483,7 +495,7 @@ RSS_FEEDS = [
         'name': 'Autocar UK',
         'url': 'https://www.autocar.co.uk/rss',
         'lang': 'en',
-        'region': '🇬',
+        'region': '🇬🇧',
         'country': 'uk',
         'priority': 'high',
         'weight': 1.5
@@ -503,7 +515,7 @@ RSS_FEEDS = [
         'name': 'Car and Driver',
         'url': 'https://www.caranddriver.com/rss/all.xml/',
         'lang': 'en',
-        'region': '🇺🇸',
+        'region': '🇺',
         'country': 'usa',
         'priority': 'high',
         'weight': 1.5
@@ -521,7 +533,7 @@ RSS_FEEDS = [
         'name': 'Road & Track',
         'url': 'https://www.roadandtrack.com/rss/all.xml/',
         'lang': 'en',
-        'region': '🇺',
+        'region': '🇸',
         'country': 'usa',
         'priority': 'high',
         'weight': 1.5
@@ -621,7 +633,6 @@ RSS_FEEDS = [
 # ============================================
 
 HOT_KEYWORDS = {
-    # 🇷 РОССИЯ
     'lada': 4, 'лада': 4, 'ваз': 4, 'уаз': 4, 'камаз': 4,
     'aurus': 4, 'москвич': 4, 'европротокол': 4,
     'россия': 3, 'российский': 3, 'российская': 3,
@@ -637,49 +648,25 @@ HOT_KEYWORDS = {
     'формула 1': 3, 'ф1': 3,
     'миллион': 2, 'миллиард': 2,
     'электрокар': 3, 'электромобиль': 3,
-    
-    # СНГ
     'беларусь': 3, 'белоруссия': 3, 'минск': 2,
     'казахстан': 3, 'казахский': 2, 'алматы': 2, 'астана': 2,
     'армения': 3, 'армянский': 2, 'ереван': 2,
     'азербайджан': 3, 'азербайджанский': 2, 'баку': 2,
     'кыргызстан': 3, 'киргизия': 3, 'бишкек': 2,
     'молдова': 3, 'молдавский': 2, 'кишинев': 2,
-    'тбилиси': 2, 'грузия': 2,
-    
-    # Топ-бренды
+    'тесли': 2, 'грузия': 2,
     'tesla': 3, 'bugatti': 3, 'ferrari': 3, 'lamborghini': 3, 'porsche': 2,
     'rolls-royce': 3, 'mclaren': 3, 'pagani': 3, 'koenigsegg': 3,
-    
-    # Электромобили
     'electric': 2, 'ev': 2, 'autonomous': 3, 'self-driving': 3, 'autopilot': 3,
     'battery': 2, 'charging': 2, 'hydrogen': 2, 'revolutionary': 3,
-    
-    # Премьеры
     'unveiled': 2, 'revealed': 2, 'launch': 2, 'debut': 2, 'premiere': 2,
     'concept': 2, 'prototype': 2, 'new model': 2,
-    
-    # Автоспорт (СНИЖЕННЫЕ ВЕСА)
-    'f1': 1,
-    'formula 1': 1,
-    'wrc': 1,
-    'le mans': 1,
-    'championship': 1,
-    'victory': 1,
-    'race': 0.5,
-    'racing': 0.5,
-    'moto': 0.5,
-    'motogp': 0.5,
-    'grand prix': 1,
-    'podium': 0.5,
-    
-    # Скандалы
+    'f1': 1, 'formula 1': 1, 'wrc': 1, 'le mans': 1,
+    'championship': 1, 'victory': 1, 'race': 0.5, 'racing': 0.5,
+    'moto': 0.5, 'motogp': 0.5, 'grand prix': 1, 'podium': 0.5,
     'recall': 2, 'crash': 2, 'accident': 2, 'bankrupt': 3, 'scandal': 3,
-    
-    # Цифры
     'million': 2, 'billion': 2, 'fastest': 2, 'most expensive': 3,
     'best-selling': 2,
-    
     'гибрид': 2,
     'тесла': 3, 'феррари': 3, 'ламборгини': 3, 'порше': 2,
 }
@@ -696,7 +683,7 @@ CATEGORIES = {
         'keywords': ['беларусь', 'белоруссия', 'казахстан', 'армения',
                      'азербайджан', 'кыргызстан', 'молдова', 'грузия', 'минск',
                      'алматы', 'астана', 'ереван', 'баку', 'бишкек', 'кишинев'],
-        'emoji': '',
+        'emoji': '🌐',
         'name': 'СНГ/ЕАЭС'
     },
     'electric': {
@@ -936,36 +923,65 @@ def get_motorsport_remaining():
 def is_publishing_time() -> bool:
     """
     Проверяет, находится ли текущее время в интервале публикаций.
-    По умолчанию: с 07:00 до 00:00 по Москве.
     """
     now_moscow = datetime.now(MOSCOW_TZ)
     current_hour = now_moscow.hour
     
-    # Если конец = 24 (полночь), то публикуем с start до 23:59
     if PUBLISH_END_HOUR == 24:
         return current_hour >= PUBLISH_START_HOUR
     else:
-        # Если конец < начала (например, с 22:00 до 06:00) — ночной режим
         if PUBLISH_END_HOUR < PUBLISH_START_HOUR:
             return current_hour >= PUBLISH_START_HOUR or current_hour < PUBLISH_END_HOUR
         else:
             return PUBLISH_START_HOUR <= current_hour < PUBLISH_END_HOUR
+
+def is_peak_hour() -> bool:
+    """
+    Проверяет, находится ли текущее время в пиковом часе.
+    В пиковые часы публикуем 1 пост за цикл.
+    В неактивные часы - 0 постов.
+    """
+    now_moscow = datetime.now(MOSCOW_TZ)
+    current_hour = now_moscow.hour
+    
+    for start, end in PEAK_HOURS:
+        if start <= current_hour < end:
+            return True
+    
+    return False
 
 def get_next_publish_time() -> str:
     """Возвращает время следующей публикации в читаемом формате"""
     now_moscow = datetime.now(MOSCOW_TZ)
     
     if now_moscow.hour < PUBLISH_START_HOUR:
-        # Сейчас ночь — следующая публикация в 07:00
         next_time = now_moscow.replace(
             hour=PUBLISH_START_HOUR, minute=0, second=0, microsecond=0
         )
     else:
-        # Сейчас день — следующая публикация завтра в 07:00
         next_time = (now_moscow + timedelta(days=1)).replace(
             hour=PUBLISH_START_HOUR, minute=0, second=0, microsecond=0
         )
     
+    return next_time.strftime('%d.%m.%Y %H:%M МСК')
+
+def get_next_peak_time() -> str:
+    """Возвращает время следующего пикового часа"""
+    now_moscow = datetime.now(MOSCOW_TZ)
+    current_hour = now_moscow.hour
+    
+    for start, end in PEAK_HOURS:
+        if current_hour < start:
+            next_time = now_moscow.replace(
+                hour=start, minute=0, second=0, microsecond=0
+            )
+            return next_time.strftime('%d.%m.%Y %H:%M МСК')
+    
+    # Если все пиковые часы прошли, следующий пик завтра
+    next_start = PEAK_HOURS[0][0]
+    next_time = (now_moscow + timedelta(days=1)).replace(
+        hour=next_start, minute=0, second=0, microsecond=0
+    )
     return next_time.strftime('%d.%m.%Y %H:%M МСК')
 
 # ============================================
@@ -1090,13 +1106,13 @@ def format_message(entry, feed_info, score, category):
     if len(translated_summary) > MAX_DESCRIPTION_LENGTH:
         translated_summary = translated_summary[:MAX_DESCRIPTION_LENGTH] + '...'
     
-    region = feed_info.get('region', '')
+    region = feed_info.get('region', '🌍')
     source_name = feed_info.get('name', 'Неизвестно')
     cat_emoji = category['emoji']
     cat_name = category['name']
     
     if score >= 7:
-        hot_indicator = "🔥🔥 *ГОРЯЧАЯ НОВОСТЬ*\n\n"
+        hot_indicator = "🔥🔥🔥 *ГОРЯЧАЯ НОВОСТЬ*\n\n"
     elif score >= 5:
         hot_indicator = "🔥🔥 *ТОП*\n\n"
     elif score >= 3:
@@ -1111,9 +1127,9 @@ def format_message(entry, feed_info, score, category):
         message += f"{translated_summary}\n\n"
     
     message += "━━━━━━━━━━━━━━━━━━━\n"
-    message += f"📊 Рейтинг: {score}/10\n"
+    message += f" Рейтинг: {score}/10\n"
     message += f"📰 Источник: {source_name} {region}\n"
-    message += f"️ Категория: {cat_name}\n"
+    message += f"🏷️ Категория: {cat_name}\n"
     message += f"\n🔗 [Читать полностью]({link})\n\n"
     
     hashtags = generate_hashtags(entry, feed_info)
@@ -1337,8 +1353,15 @@ def fetch_and_publish():
     # 🌙 ПРОВЕРКА ВРЕМЕНИ ПУБЛИКАЦИИ
     if not is_publishing_time():
         next_time = get_next_publish_time()
-        logger.info(f" Ночной режим. Публикация пропущена.")
+        logger.info(f"🌙 Ночной режим. Публикация пропущена.")
         logger.info(f"🕐 Следующая публикация: {next_time}")
+        return 0, 0
+    
+    # 🕐 ПРОВЕРКА ПИКОВОГО ЧАСА (гибкий лимит)
+    if not is_peak_hour():
+        next_peak = get_next_peak_time()
+        logger.info(f"⏸️ Неактивный час. Публикация пропущена.")
+        logger.info(f"🕐 Следующий пиковый час: {next_peak}")
         return 0, 0
     
     # Проверяем лимиты
@@ -1352,6 +1375,9 @@ def fetch_and_publish():
     if daily_remaining <= 0:
         logger.info(f"⏭️ Дневной лимит постов достигнут ({DAILY_POST_LIMIT}/день). Пропускаем цикл.")
         return 0, 0
+    
+    # 🎯 ЛИМИТ ЗА ЦИКЛ: 1 пост
+    max_per_cycle = MAX_POSTS_PER_CYCLE
     
     logger.info(f"Начинаем проверку {len(RSS_FEEDS)} источников...")
     
@@ -1402,7 +1428,7 @@ def fetch_and_publish():
                         'category': category_info
                     })
                 except Exception as e:
-                    logger.warning(f"⚠️ Ошибка обработки новости: {e}")
+                    logger.warning(f"️ Ошибка обработки новости: {e}")
                     continue
                         
         except Exception as e:
@@ -1420,11 +1446,10 @@ def fetch_and_publish():
     all_news = remove_duplicates(all_news)
     logger.info(f"✨ После дедупликации: {len(all_news)} уникальных новостей")
     
-    # 🎯 БЕРЁМ ТОЛЬКО ТОП-2 НОВОСТИ ЗА ЦИКЛ
-    max_per_cycle = 2
+    # 🎯 БЕРЁМ ТОЛЬКО ТОП-1 НОВОСТЬ ЗА ЦИКЛ
     all_news = all_news[:max_per_cycle]
     
-    logger.info(f"🎯 Отобрано ТОП-{len(all_news)} новостей для этого цикла")
+    logger.info(f" Отобрано ТОП-{len(all_news)} новостей для этого цикла (лимит: {max_per_cycle})")
     
     # Балансировка по категориям
     russian_count = 0
@@ -1507,9 +1532,9 @@ def fetch_and_publish():
                 
                 new_count += 1
                 country = feed_info.get('country', 'world')
-                flag = {'russia': '🇷🇺', 'belarus': '🇧🇾', 'kazakhstan': '🇰🇿',
-                        'armenia': '🇦🇲', 'azerbaijan': '🇦🇿', 
-                        'kyrgyzstan': '🇰', 'moldova': '🇲🇩'}.get(country, '')
+                flag = {'russia': '🇷', 'belarus': '🇧', 'kazakhstan': '🇰',
+                        'armenia': '🇦🇲', 'azerbaijan': '🇿', 
+                        'kyrgyzstan': '🇰🇬', 'moldova': '🇲🇩'}.get(country, '')
                 source_name = feed_info.get('name', 'Unknown')
                 logger.info(f"✅ [{flag}] {source_name} (рейтинг {score:.2f}): {title[:50]}...")
                 logger.info(f"📊 Пост {new_daily_count}/{DAILY_POST_LIMIT} за сегодня")
@@ -1521,30 +1546,34 @@ def fetch_and_publish():
             error_count += 1
             continue
     
-    logger.info(f"📈 Итог: ✅{new_count} | 🇷🇺{russian_count} | СНГ{cis_count} | {foreign_count} | 🏁{motorsport_count} | ⏭️{skipped_count} | ❌{error_count}")
+    logger.info(f" Итог: ✅{new_count} | 🇺{russian_count} | СНГ{cis_count} | 🌍{foreign_count} | 🏁{motorsport_count} | ️{skipped_count} | ❌{error_count}")
     logger.info(f"📊 Опубликовано в этом цикле: {posts_published_today}")
-    logger.info(f" Всего сегодня: {load_daily_post_count()}/{DAILY_POST_LIMIT}")
+    logger.info(f"📊 Всего сегодня: {load_daily_post_count()}/{DAILY_POST_LIMIT}")
     return new_count, error_count
 
 def send_startup_message():
     try:
         now_moscow = datetime.now(MOSCOW_TZ).strftime('%H:%M МСК')
         
+        peak_hours_str = ', '.join([f"{start}:00-{end}:00" for start, end in PEAK_HOURS])
+        
         startup_message = (
             "🤖 *Auto imPulse News Bot запущен!*\n\n"
             f"📡 Источников: {len(RSS_FEEDS)}\n"
-            f"🌍 Страны: Россия, Беларусь, Казахстан, Армения,\n"
+            f" Страны: Россия, Беларусь, Казахстан, Армения,\n"
             f"      Азербайджан, Кыргызстан, Молдова\n"
             f"      + Великобритания, США, мир\n"
-            f"️ Интервал: {CHECK_INTERVAL // 60} мин\n"
+            f"⏱️ Интервал: {CHECK_INTERVAL // 60} мин\n"
             f"📈 Мин. рейтинг: {MIN_SCORE}/10\n"
-            f"🌐 Перевод: {'✅ Google Translate' if ENABLE_TRANSLATION else ''}\n"
+            f"🌐 Перевод: {'✅ Google Translate' if ENABLE_TRANSLATION else '❌'}\n"
             f"🖼️ Изображения: {'✅' if ENABLE_IMAGES else '❌'}\n"
-            f"️ Хештеги: {'✅' if ENABLE_HASHTAGS else '❌'}\n"
+            f"🏷️ Хештеги: {'✅' if ENABLE_HASHTAGS else '❌'}\n"
             f"🏁 Лимит спорта: {MOTORSPORT_DAILY_LIMIT}/сутки\n"
             f"📊 Дневной лимит постов: {DAILY_POST_LIMIT}/сутки\n"
+            f"📝 Постов за цикл: {MAX_POSTS_PER_CYCLE}\n"
+            f"⏰ Пиковые часы: {peak_hours_str}\n"
             f"🌙 Публикация: {PUBLISH_START_HOUR}:00 - {PUBLISH_END_HOUR}:00 МСК\n"
-            f"🕐 Текущее время: {now_moscow}\n\n"
+            f" Текущее время: {now_moscow}\n\n"
             f"🕐 {datetime.now(MOSCOW_TZ).strftime('%Y-%m-%d %H:%M:%S МСК')}"
         )
         logger.info("Бот успешно запущен!")
@@ -1586,7 +1615,7 @@ def main():
     logger.info("=" * 50)
     
     if not check_channel_access():
-        logger.error("❌ Нет доступа к каналу!")
+        logger.error(" Нет доступа к каналу!")
         sys.exit(1)
     
     send_startup_message()
