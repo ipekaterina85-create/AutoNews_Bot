@@ -416,7 +416,7 @@ RSS_FEEDS = [
         'category': 'korea'
     },
 
-    # 🇧🇾 БЕЛАРУСЬ
+        # 🇧🇾 БЕЛАРУСЬ (Проверено: валидный XML)
     {
         'name': 'Onliner Авто',
         'url': 'https://auto.onliner.by/feed',
@@ -437,21 +437,11 @@ RSS_FEEDS = [
         'weight': 1.8,
         'category': 'cis'
     },
-    {
-        'name': 'AV.BY',
-        'url': 'https://av.by/rss',
-        'lang': 'ru',
-        'region': '🇧🇾',
-        'country': 'belarus',
-        'priority': 'medium',
-        'weight': 1.5,
-        'category': 'cis'
-    },
     
-    # 🇰🇿 КАЗАХСТАН
+    # 🇰🇿 КАЗАХСТАН (Kolesa.kz сломан, замена на главный портал с авто-разделом)
     {
-        'name': 'Kolesa.kz',
-        'url': 'https://kolesa.kz/rss/',
+        'name': 'Tengrinews (Авто/Экономика)',
+        'url': 'https://tengrinews.kz/rss/',
         'lang': 'ru',
         'region': '🇰🇿',
         'country': 'kazakhstan',
@@ -460,10 +450,10 @@ RSS_FEEDS = [
         'category': 'cis'
     },
     
-    # 🇦🇲 АРМЕНИЯ
+    # 🇦🇲 АРМЕНИЯ (News.am сломан, замена на стабильное агентство)
     {
-        'name': 'News.am Авто',
-        'url': 'https://news.am/rss/auto/ru',
+        'name': '1in.am (Авто/Происшествия)',
+        'url': 'https://1in.am/rss/',
         'lang': 'ru',
         'region': '🇦🇲',
         'country': 'armenia',
@@ -472,10 +462,10 @@ RSS_FEEDS = [
         'category': 'cis'
     },
     
-    # 🇦🇿 АЗЕРБАЙДЖАН
+    # 🇦🇿 АЗЕРБАЙДЖАН (1news.az сломан, замена на Trend)
     {
-        'name': '1news.az Авто',
-        'url': 'https://1news.az/rss.php?lang=ru&cat=auto',
+        'name': 'Trend News (Авто/Экономика)',
+        'url': 'https://trend.az/rss/',
         'lang': 'ru',
         'region': '🇦🇿',
         'country': 'azerbaijan',
@@ -484,10 +474,10 @@ RSS_FEEDS = [
         'category': 'cis'
     },
     
-    # 🇰🇬 КЫРГЫЗСТАН
+    # 🇰🇬 КЫРГЫЗСТАН (Kolesa.kg мертв, замена на 24.kg)
     {
-        'name': 'Kolesa.kg',
-        'url': 'https://kolesa.kg/rss/',
+        'name': '24.kg (Авто/Общество)',
+        'url': 'https://24.kg/rss/',
         'lang': 'ru',
         'region': '🇰🇬',
         'country': 'kyrgyzstan',
@@ -496,7 +486,7 @@ RSS_FEEDS = [
         'category': 'cis'
     },
     
-    # 🇲🇩 МОЛДОВА
+    # 🇲🇩 МОЛДОВА (Работает стабильно, оставляем)
     {
         'name': 'Auto.MD',
         'url': 'https://auto.md/feed/',
