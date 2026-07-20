@@ -20,7 +20,7 @@ from deep_translator import GoogleTranslator
 # Устанавливаем timeout для всех запросов
 socket.setdefaulttimeout(30)
 
-# Отключаем строгую проверку SSL
+# Отключаем строгую проверку SSL (компромисс для старых RSS-лент)
 try:
     ssl._create_default_https_context = ssl._create_unverified_context
 except:
@@ -43,7 +43,7 @@ MIN_SCORE = int(os.environ.get('MIN_SCORE', 5))
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
 
 # 🎯 ЛИМИТЫ
-DAILY_POST_LIMIT = int(os.environ.get('DAILY_POST_LIMIT', 25))  # 25 постов в день
+DAILY_POST_LIMIT = int(os.environ.get('DAILY_POST_LIMIT', 25))
 MOTORSPORT_DAILY_LIMIT = int(os.environ.get('MOTORSPORT_DAILY_LIMIT', 2))
 
 # 🌙 НОЧНОЙ РЕЖИМ (по Московскому времени, UTC+3)
@@ -52,7 +52,6 @@ PUBLISH_START_HOUR = int(os.environ.get('PUBLISH_START_HOUR', 7))
 PUBLISH_END_HOUR = int(os.environ.get('PUBLISH_END_HOUR', 24))
 
 # 🕐 ГИБКИЕ ЧАСЫ ПУБЛИКАЦИИ (пиковые часы)
-# В эти часы публикуем 1 пост за цикл
 PEAK_HOURS = [
     (7, 10),    # Утренний пик: 07:00-10:00
     (11, 14),   # Обеденный пик: 11:00-14:00
@@ -94,10 +93,8 @@ apihelper.ENABLE_MIDDLEWARE = True
 # GOOGLE TRANSLATE
 # ============================================
 
-from deep_translator import GoogleTranslator
-
 class GoogleTranslatorPro:
-    """Профессиональный переводчик"""
+    """Профессиональный переводчик с автомобильным глоссарием"""
     
     def __init__(self):
         self.translator = GoogleTranslator(source='auto', target='ru')
@@ -107,138 +104,68 @@ class GoogleTranslatorPro:
         self.daily_limit = 1000000
         
         self.auto_glossary = {
-            'самосвал': 'внедорожник',
-            'самосвала': 'внедорожника',
-            'самосвалу': 'внедорожнику',
-            'самосвалом': 'внедорожником',
-            'самосвале': 'внедорожнике',
-            'самосвалы': 'внедорожники',
+            'самосвал': 'внедорожник', 'самосвала': 'внедорожника', 'самосвалу': 'внедорожнику',
+            'самосвалом': 'внедорожником', 'самосвале': 'внедорожнике', 'самосвалы': 'внедорожники',
             'самосвалов': 'внедорожников',
-            'ледяных': 'бензиновых',
-            'ледяной': 'бензиновой',
-            'ледяные': 'бензиновые',
-            'сломает крышку': 'будет представлен',
-            'сломала крышку': 'была представлена',
+            'ледяных': 'бензиновых', 'ледяной': 'бензиновой', 'ледяные': 'бензиновые',
+            'сломает крышку': 'будет представлен', 'сломала крышку': 'была представлена',
             'сломало крышку': 'было представлено',
-            'диапазон': 'запас хода',
-            'диапазона': 'запаса хода',
-            'диапазоне': 'запасе хода',
-            'диапазоном': 'запасом хода',
-            'диапазоны': 'запасы хода',
-            'диапазонов': 'запасов хода',
-            'фатальную': 'смертельную',
-            'фатальной': 'смертельной',
-            'фатальный': 'смертельный',
-            'фатальная': 'смертельная',
-            'фатальные': 'смертельные',
-            'фунтов-футов': 'Нм',
-            'фунт-футов': 'Нм',
-            'lb-ft': 'Нм',
-            'lb ft': 'Нм',
-            'священное имя': 'легендарное имя',
-            'священное название': 'легендарное название',
+            'диапазон': 'запас хода', 'диапазона': 'запаса хода', 'диапазоне': 'запасе хода',
+            'диапазоном': 'запасом хода', 'диапазоны': 'запасы хода', 'диапазонов': 'запасов хода',
+            'фатальную': 'смертельную', 'фатальной': 'смертельной', 'фатальный': 'смертельный',
+            'фатальная': 'смертельная', 'фатальные': 'смертельные',
+            'фунтов-футов': 'Нм', 'фунт-футов': 'Нм', 'lb-ft': 'Нм', 'lb ft': 'Нм',
+            'священное имя': 'легендарное имя', 'священное название': 'легендарное название',
             'свободной настройке выхлопных газов': 'свободно текущей выхлопной системе',
             'свободная настройка выхлопных газов': 'свободно текущая выхлопная система',
-            'лошадь': 'лошадиных сил',
-            'лошади': 'лошадиных сил',
-            'лошадей': 'лошадиных сил',
-            'конская сила': 'лошадиная сила',
-            'конские силы': 'лошадиные силы',
-            'подзарядка': 'зарядка',
-            'подзарядки': 'зарядки',
-            'подзарядку': 'зарядку',
-            'батарея': 'аккумулятор',
-            'батареи': 'аккумуляторы',
-            'батарею': 'аккумулятор',
-            'батарее': 'аккумуляторе',
-            'батарей': 'аккумуляторов',
-            'дилерство': 'автосалон',
-            'дилерства': 'автосалоны',
-            'дилерству': 'автосалону',
-            'производитель': 'автопроизводитель',
-            'производителя': 'автопроизводителя',
-            'плывя против прилива': 'идя против тренда',
-            'плывет против прилива': 'идёт против тренда',
+            'лошадь': 'лошадиных сил', 'лошади': 'лошадиных сил', 'лошадей': 'лошадиных сил',
+            'конская сила': 'лошадиная сила', 'конские силы': 'лошадиные силы',
+            'подзарядка': 'зарядка', 'подзарядки': 'зарядки', 'подзарядку': 'зарядку',
+            'батарея': 'аккумулятор', 'батареи': 'аккумуляторы', 'батарею': 'аккумулятор',
+            'батарее': 'аккумуляторе', 'батарей': 'аккумуляторов',
+            'дилерство': 'автосалон', 'дилерства': 'автосалоны', 'дилерству': 'автосалону',
+            'производитель': 'автопроизводитель', 'производителя': 'автопроизводителя',
+            'плывя против прилива': 'идя против тренда', 'плывет против прилива': 'идёт против тренда',
             'против прилива': 'против тренда',
-            'anti-ev': 'анти-электрического',
-            'Anti-EV': 'анти-электрического',
-            '1-из-1': 'единственный в своём роде',
-            '1-of-1': 'единственный в своём роде',
+            'anti-ev': 'анти-электрического', 'Anti-EV': 'анти-электрического',
+            '1-из-1': 'единственный в своём роде', '1-of-1': 'единственный в своём роде',
             'one-of-one': 'единственный в своём роде',
             'tags nostalgia': 'отсылает к ностальгии',
-            'стартовая цена': 'начальная цена',
-            'базовая цена': 'начальная цена',
-            'базовая модель': 'базовая версия',
-            'топ-модель': 'топ-версия',
-            'разоблачил': 'представил',
-            'разоблачила': 'представила',
-            'разоблачено': 'представлено',
-            'раскрыл': 'представил',
-            'раскрыла': 'представила',
-            'раскрыто': 'представлено',
-            'раскрытие': 'премьера',
-            'раскрытия': 'премьеры',
-            'раскрытию': 'премьере',
-            'дебют': 'премьера',
-            'открыл': 'представил',
-            'открыла': 'представила',
-            'открыто': 'представлено',
-            'юбилейной отделке': 'юбилейной версии',
-            'юбилейная отделка': 'юбилейная версия',
+            'стартовая цена': 'начальная цена', 'базовая цена': 'начальная цена',
+            'базовая модель': 'базовая версия', 'топ-модель': 'топ-версия',
+            'разоблачил': 'представил', 'разоблачила': 'представила', 'разоблачено': 'представлено',
+            'раскрыл': 'представил', 'раскрыла': 'представила', 'раскрыто': 'представлено',
+            'раскрытие': 'премьера', 'раскрытия': 'премьеры', 'раскрытию': 'премьере',
+            'дебют': 'премьера', 'открыл': 'представил', 'открыла': 'представила', 'открыто': 'представлено',
+            'юбилейной отделке': 'юбилейной версии', 'юбилейная отделка': 'юбилейная версия',
             'первую серийную': 'первый серийный',
-            'anti-ev tide': 'тренда против электромобилей',
-            'against the tide': 'против тренда',
+            'anti-ev tide': 'тренда против электромобилей', 'against the tide': 'против тренда',
+            # Азиатские авто-термины
+            'ICE': 'ДВС', 'BEV': 'электромобиль', 'PHEV': 'подключаемый гибрид',
+            'JDM': 'японский внутренний рынок', 'Kei car': 'кей-кар', 'Chaebol': 'чеболь'
         }
         
         self.phrase_replacements = [
-            ('breaks cover', 'будет представлен'),
-            ('broke cover', 'был представлен'),
-            ('break cover', 'будет представлен'),
-            ('ICE population', 'парк бензиновых автомобилей'),
-            ('ICE Panda', 'бензиновая Panda'),
-            ('ICE vehicles', 'автомобили с ДВС'),
-            ('family SUV', 'семейный внедорожник'),
-            ('family hauler', 'семейный внедорожник'),
-            ('fatal crash', 'смертельная авария'),
-            ('fatal accident', 'смертельная авария'),
-            ('fatal collision', 'смертельное столкновение'),
-            ('miles range', 'миль запаса хода'),
-            ('mile range', 'миль запаса хода'),
-            ('0-60 mph', '0-100 км/ч'),
-            ('0-60mph', '0-100 км/ч'),
-            ('horsepower', 'л.с.'),
-            ('hp', 'л.с.'),
-            ('bhp', 'л.с.'),
-            ('lb-ft of torque', 'Нм крутящего момента'),
-            ('lb-ft', 'Нм'),
-            ('top speed', 'максимальная скорость'),
-            ('base price', 'начальная цена'),
-            ('starting at', 'от'),
-            ('starts at', 'от'),
-            ('starting price', 'начальная цена'),
-            ('goes on sale', 'поступит в продажу'),
-            ('on sale now', 'уже в продаже'),
-            ('available in', 'доступен в'),
-            ('unveiled', 'представлен'),
-            ('revealed', 'представлен'),
-            ('launched', 'запущен в производство'),
-            ('introduced', 'представлен'),
-            ('on the straights', 'на прямых участках трассы'),
-            ('on straights', 'на прямых'),
-            ('half a tenth', 'полдесятых секунды'),
-            ('tenths of a second', 'десятых секунды'),
-            ('swimming against the tide', 'идя против тренда'),
-            ('against the tide', 'против тренда'),
-            ('according to', 'по данным'),
-            ('spokesperson', 'представитель'),
-            ('press release', 'пресс-релиз'),
-            ('model year', 'модельный год'),
-            ('new generation', 'новое поколение'),
-            ('next generation', 'следующее поколение'),
-            ('all-electric', 'полностью электрический'),
-            ('plug-in hybrid', 'подключаемый гибрид'),
-            ('mild hybrid', 'мягкий гибрид'),
-            ('free-flowing exhaust', 'свободно текущая выхлопная система'),
+            ('breaks cover', 'будет представлен'), ('broke cover', 'был представлен'), ('break cover', 'будет представлен'),
+            ('ICE population', 'парк автомобилей с ДВС'), ('ICE Panda', 'бензиновая Panda'), ('ICE vehicles', 'автомобили с ДВС'),
+            ('family SUV', 'семейный внедорожник'), ('family hauler', 'семейный внедорожник'),
+            ('fatal crash', 'смертельная авария'), ('fatal accident', 'смертельная авария'), ('fatal collision', 'смертельное столкновение'),
+            ('miles range', 'миль запаса хода'), ('mile range', 'миль запаса хода'),
+            ('0-60 mph', '0-100 км/ч'), ('0-60mph', '0-100 км/ч'),
+            ('horsepower', 'л.с.'), ('hp', 'л.с.'), ('bhp', 'л.с.'),
+            ('lb-ft of torque', 'Нм крутящего момента'), ('lb-ft', 'Нм'),
+            ('top speed', 'максимальная скорость'), ('base price', 'начальная цена'),
+            ('starting at', 'от'), ('starts at', 'от'), ('starting price', 'начальная цена'),
+            ('goes on sale', 'поступит в продажу'), ('on sale now', 'уже в продаже'),
+            ('available in', 'доступен в'), ('unveiled', 'представлен'), ('revealed', 'представлен'),
+            ('launched', 'запущен в производство'), ('introduced', 'представлен'),
+            ('on the straights', 'на прямых участках трассы'), ('on straights', 'на прямых'),
+            ('half a tenth', 'полдесятых секунды'), ('tenths of a second', 'десятых секунды'),
+            ('swimming against the tide', 'идя против тренда'), ('against the tide', 'против тренда'),
+            ('according to', 'по данным'), ('spokesperson', 'представитель'), ('press release', 'пресс-релиз'),
+            ('model year', 'модельный год'), ('new generation', 'новое поколение'), ('next generation', 'следующее поколение'),
+            ('all-electric', 'полностью электрический'), ('plug-in hybrid', 'подключаемый гибрид'),
+            ('mild hybrid', 'мягкий гибрид'), ('free-flowing exhaust', 'свободно текущая выхлопная система'),
         ]
         
     def translate(self, text, source_lang='en', target_lang='ru'):
@@ -248,7 +175,7 @@ class GoogleTranslatorPro:
             return text
         try:
             if self.daily_chars_used + len(text) > self.daily_limit:
-                logger.warning(f"⚠️ Дневной лимит Google Translate исчерпан")
+                logger.warning("⚠️ Дневной лимит Google Translate исчерпан")
                 return text
             now = time.time()
             if now - self.last_call_time < self.min_interval:
@@ -272,12 +199,7 @@ class GoogleTranslatorPro:
         processed_text = text
         for eng_phrase, rus_phrase in self.phrase_replacements:
             if eng_phrase.lower() in processed_text.lower():
-                processed_text = re.sub(
-                    re.escape(eng_phrase), 
-                    rus_phrase, 
-                    processed_text, 
-                    flags=re.IGNORECASE
-                )
+                processed_text = re.sub(re.escape(eng_phrase), rus_phrase, processed_text, flags=re.IGNORECASE)
         translated = self._translate_chunk(processed_text, source_lang, target_lang)
         translated = self._apply_glossary(translated)
         translated = self._final_cleanup(translated)
@@ -343,7 +265,7 @@ translator = None
 if ENABLE_TRANSLATION:
     try:
         translator = GoogleTranslatorPro()
-        logger.info(f"✅ Google Translator Pro инициализирован")
+        logger.info("✅ Google Translator Pro инициализирован")
     except Exception as e:
         logger.error(f"❌ Ошибка инициализации Google Translator: {e}")
         translator = None
@@ -356,7 +278,37 @@ else:
 # ============================================
 
 RSS_FEEDS = [
-    # 🇷🇺 РОССИЯ
+    # 🇷🇺 ЭКСКЛЮЗИВНЫЕ РОССИЙСКИЕ ИСТОЧНИКИ
+    {
+        'name': 'Журнал Авто.ру',
+        'url': 'https://journal.autoru.ru/rss/',
+        'lang': 'ru',
+        'region': '🇷🇺',
+        'country': 'russia',
+        'priority': 'high',
+        'weight': 2.5,
+        'category': 'russia'
+    },
+    {
+        'name': 'За рулем',
+        'url': 'https://www.zr.ru/rss/',
+        'lang': 'ru',
+        'region': '🇷🇺',
+        'country': 'russia',
+        'priority': 'high',
+        'weight': 2.0,
+        'category': 'russia'
+    },
+    {
+        'name': 'Колёса.ру',
+        'url': 'https://www.kolesa.ru/rss/',
+        'lang': 'ru',
+        'region': '🇷🇺',
+        'country': 'russia',
+        'priority': 'high',
+        'weight': 2.0,
+        'category': 'russia'
+    },
     {
         'name': 'Дром',
         'url': 'https://www.drom.ru/export/xml/news.rss',
@@ -378,6 +330,16 @@ RSS_FEEDS = [
         'category': 'russia'
     },
     {
+        'name': 'Коммерсантъ Автопилот',
+        'url': 'https://www.kommersant.ru/RSS/auto.xml',
+        'lang': 'ru',
+        'region': '🇷🇺',
+        'country': 'russia',
+        'priority': 'medium',
+        'weight': 1.5,
+        'category': 'russia'
+    },
+    {
         'name': 'Автостат',
         'url': 'https://www.autostat.ru/news/rss/',
         'lang': 'ru',
@@ -387,17 +349,73 @@ RSS_FEEDS = [
         'weight': 1.5,
         'category': 'russia'
     },
+    
+    # 🇨🇳 КИТАЙ (Эксклюзивные новости раньше рунета)
     {
-        'name': 'Коммерсантъ Автопилот',
-        'url': 'https://www.kommersant.ru/RSS/auto.xml',
-        'lang': 'ru',
-        'region': '🇺',
-        'country': 'russia',
-        'priority': 'medium',
-        'weight': 1.5,
-        'category': 'russia'
+        'name': 'CarNewsChina',
+        'url': 'https://www.carnewschina.com/feed/',
+        'lang': 'en',
+        'region': '🇨🇳',
+        'country': 'china',
+        'priority': 'high',
+        'weight': 2.0,
+        'category': 'china'
+    },
+    {
+        'name': 'CnEVPost',
+        'url': 'https://cnevpost.com/feed/',
+        'lang': 'en',
+        'region': '🇨🇳',
+        'country': 'china',
+        'priority': 'high',
+        'weight': 2.0,
+        'category': 'china'
     },
     
+    # 🇯🇵 ЯПОНИЯ (Первоисточники JDM и технологий)
+    {
+        'name': 'Response.jp',
+        'url': 'https://response.jp/index.rdf',
+        'lang': 'ja',
+        'region': '🇯🇵',
+        'country': 'japan',
+        'priority': 'high',
+        'weight': 1.8,
+        'category': 'japan'
+    },
+    {
+        'name': 'Car Watch',
+        'url': 'https://car.watch.impress.co.jp/index.rdf',
+        'lang': 'ja',
+        'region': '🇯🇵',
+        'country': 'japan',
+        'priority': 'medium',
+        'weight': 1.5,
+        'category': 'japan'
+    },
+    
+    # 🇰🇷 КОРЕЯ (Новости Hyundai/Kia/Genesis из первых рук)
+    {
+        'name': 'Yonhap News Auto',
+        'url': 'https://en.yna.co.kr/rss/auto.xml',
+        'lang': 'en',
+        'region': '🇰🇷',
+        'country': 'korea',
+        'priority': 'high',
+        'weight': 1.8,
+        'category': 'korea'
+    },
+    {
+        'name': 'Korean Car Blog',
+        'url': 'https://www.koreancarblog.com/feed/',
+        'lang': 'en',
+        'region': '🇰🇷',
+        'country': 'korea',
+        'priority': 'medium',
+        'weight': 1.5,
+        'category': 'korea'
+    },
+
     # 🇧🇾 БЕЛАРУСЬ
     {
         'name': 'Onliner Авто',
@@ -423,19 +441,19 @@ RSS_FEEDS = [
         'name': 'AV.BY',
         'url': 'https://av.by/rss',
         'lang': 'ru',
-        'region': '🇾',
+        'region': '🇧🇾',
         'country': 'belarus',
         'priority': 'medium',
         'weight': 1.5,
         'category': 'cis'
     },
     
-    # 🇿 КАЗАХСТАН
+    # 🇰🇿 КАЗАХСТАН
     {
         'name': 'Kolesa.kz',
         'url': 'https://kolesa.kz/rss/',
         'lang': 'ru',
-        'region': '🇰',
+        'region': '🇰🇿',
         'country': 'kazakhstan',
         'priority': 'high',
         'weight': 1.8,
@@ -471,7 +489,7 @@ RSS_FEEDS = [
         'name': 'Kolesa.kg',
         'url': 'https://kolesa.kg/rss/',
         'lang': 'ru',
-        'region': '🇬',
+        'region': '🇰🇬',
         'country': 'kyrgyzstan',
         'priority': 'medium',
         'weight': 1.3,
@@ -515,7 +533,7 @@ RSS_FEEDS = [
         'name': 'Car and Driver',
         'url': 'https://www.caranddriver.com/rss/all.xml/',
         'lang': 'en',
-        'region': '🇺',
+        'region': '🇺🇸',
         'country': 'usa',
         'priority': 'high',
         'weight': 1.5
@@ -533,7 +551,7 @@ RSS_FEEDS = [
         'name': 'Road & Track',
         'url': 'https://www.roadandtrack.com/rss/all.xml/',
         'lang': 'en',
-        'region': '🇸',
+        'region': '🇺🇸',
         'country': 'usa',
         'priority': 'high',
         'weight': 1.5
@@ -596,7 +614,7 @@ RSS_FEEDS = [
         'name': 'Crash.net',
         'url': 'https://www.crash.net/rss',
         'lang': 'en',
-        'region': '',
+        'region': '🌍',
         'country': 'world',
         'priority': 'medium',
         'category': 'motorsport',
@@ -609,7 +627,7 @@ RSS_FEEDS = [
         'name': 'Supercar Blondie',
         'url': 'https://supercarblondie.com/feed/',
         'lang': 'en',
-        'region': '',
+        'region': '🌍',
         'country': 'world',
         'priority': 'high',
         'category': 'luxury',
@@ -636,7 +654,9 @@ HOT_KEYWORDS = {
     'lada': 4, 'лада': 4, 'ваз': 4, 'уаз': 4, 'камаз': 4,
     'aurus': 4, 'москвич': 4, 'европротокол': 4,
     'россия': 3, 'российский': 3, 'российская': 3,
-    'автоваз': 4, 'sollers': 3, 'chery': 3, 'haval': 3, 'geely': 3, 'changan': 3,
+    'автоваз': 4, 'sollers': 3, 
+    'chery': 3, 'haval': 3, 'geely': 3, 'changan': 3,
+    'byd': 3, 'zeekr': 3, 'nio': 3, 'xpeng': 3, 'avatr': 3, 'jac': 3,
     'отзыв': 3, 'отзывают': 3, 'отозван': 3,
     'штраф': 3, 'штрафы': 3, 'пдд': 3, 'гаи': 3, 'гибдд': 3,
     'акциз': 3, 'налог': 3, 'утилизационный сбор': 4,
@@ -654,7 +674,7 @@ HOT_KEYWORDS = {
     'азербайджан': 3, 'азербайджанский': 2, 'баку': 2,
     'кыргызстан': 3, 'киргизия': 3, 'бишкек': 2,
     'молдова': 3, 'молдавский': 2, 'кишинев': 2,
-    'тесли': 2, 'грузия': 2,
+    'тесла': 3, 'грузия': 2,
     'tesla': 3, 'bugatti': 3, 'ferrari': 3, 'lamborghini': 3, 'porsche': 2,
     'rolls-royce': 3, 'mclaren': 3, 'pagani': 3, 'koenigsegg': 3,
     'electric': 2, 'ev': 2, 'autonomous': 3, 'self-driving': 3, 'autopilot': 3,
@@ -667,8 +687,8 @@ HOT_KEYWORDS = {
     'recall': 2, 'crash': 2, 'accident': 2, 'bankrupt': 3, 'scandal': 3,
     'million': 2, 'billion': 2, 'fastest': 2, 'most expensive': 3,
     'best-selling': 2,
-    'гибрид': 2,
-    'тесла': 3, 'феррари': 3, 'ламборгини': 3, 'порше': 2,
+    'гибрид': 2, 'jdm': 2, 'кей-кар': 2,
+    'феррари': 3, 'ламборгини': 3, 'порше': 2, 'genesis': 3,
 }
 
 CATEGORIES = {
@@ -685,6 +705,21 @@ CATEGORIES = {
                      'алматы', 'астана', 'ереван', 'баку', 'бишкек', 'кишинев'],
         'emoji': '🌐',
         'name': 'СНГ/ЕАЭС'
+    },
+    'china': {
+        'keywords': ['china', 'chinese', 'китай', 'китайский', 'byd', 'chery', 'geely', 'hongqi', 'zeekr', 'li auto', 'nio', 'xpeng', 'avatr', 'jac'],
+        'emoji': '🇨🇳',
+        'name': 'Китай'
+    },
+    'japan': {
+        'keywords': ['japan', 'japanese', 'япония', 'японский', 'toyota', 'honda', 'nissan', 'mazda', 'subaru', 'lexus', 'mitsubishi', 'suzuki'],
+        'emoji': '🇯🇵',
+        'name': 'Япония'
+    },
+    'korea': {
+        'keywords': ['korea', 'korean', 'корея', 'корейский', 'hyundai', 'kia', 'genesis', 'kg mobility', 'ssangyong'],
+        'emoji': '🇰🇷',
+        'name': 'Корея'
     },
     'electric': {
         'keywords': ['tesla', 'electric', 'ev', 'battery', 'charging', 'электро', 'гибрид', 'ion', 'ioniq', 'тесла', 'электрокар', 'электромобиль'],
@@ -734,11 +769,7 @@ def calculate_news_score(entry, feed_info):
     if 20 < len(entry.get('title', '')) < 100:
         score += 0.5
     
-    if feed_info.get('country') == 'russia':
-        score *= 1.1
-    
-    if feed_info.get('country') in ['belarus', 'kazakhstan', 'armenia', 'azerbaijan', 
-                                     'kyrgyzstan', 'moldova']:
+    if feed_info.get('country') in ['russia', 'belarus', 'kazakhstan', 'armenia', 'azerbaijan', 'kyrgyzstan', 'moldova', 'china', 'japan', 'korea']:
         score *= 1.1
     
     return round(score, 2), matched_keywords
@@ -751,7 +782,7 @@ def get_news_category(entry, feed_info):
     if 'category' in feed_info:
         cat_id = feed_info['category']
         if cat_id in CATEGORIES:
-            if cat_id in ['russia', 'cis']:
+            if cat_id in ['russia', 'cis', 'china', 'japan', 'korea']:
                 return cat_id, CATEGORIES[cat_id]
     
     for cat_id, cat_info in CATEGORIES.items():
@@ -844,7 +875,6 @@ def cleanup_duplicates_file():
 def get_today_str():
     return datetime.now(MOSCOW_TZ).strftime('%Y-%m-%d')
 
-# Счётчик общих постов
 DAILY_POST_COUNT_FILE = 'daily_post_count.txt'
 
 def load_daily_post_count():
@@ -880,7 +910,6 @@ def get_daily_post_remaining():
     remaining = DAILY_POST_LIMIT - current
     return max(0, remaining)
 
-# Счётчик спортивных новостей
 MOTORSPORT_COUNT_FILE = 'motorsport_daily_count.txt'
 
 def load_motorsport_count():
@@ -921,9 +950,6 @@ def get_motorsport_remaining():
 # ============================================
 
 def is_publishing_time() -> bool:
-    """
-    Проверяет, находится ли текущее время в интервале публикаций.
-    """
     now_moscow = datetime.now(MOSCOW_TZ)
     current_hour = now_moscow.hour
     
@@ -936,11 +962,6 @@ def is_publishing_time() -> bool:
             return PUBLISH_START_HOUR <= current_hour < PUBLISH_END_HOUR
 
 def is_peak_hour() -> bool:
-    """
-    Проверяет, находится ли текущее время в пиковом часе.
-    В пиковые часы публикуем 1 пост за цикл.
-    В неактивные часы - 0 постов.
-    """
     now_moscow = datetime.now(MOSCOW_TZ)
     current_hour = now_moscow.hour
     
@@ -951,37 +972,26 @@ def is_peak_hour() -> bool:
     return False
 
 def get_next_publish_time() -> str:
-    """Возвращает время следующей публикации в читаемом формате"""
     now_moscow = datetime.now(MOSCOW_TZ)
     
     if now_moscow.hour < PUBLISH_START_HOUR:
-        next_time = now_moscow.replace(
-            hour=PUBLISH_START_HOUR, minute=0, second=0, microsecond=0
-        )
+        next_time = now_moscow.replace(hour=PUBLISH_START_HOUR, minute=0, second=0, microsecond=0)
     else:
-        next_time = (now_moscow + timedelta(days=1)).replace(
-            hour=PUBLISH_START_HOUR, minute=0, second=0, microsecond=0
-        )
+        next_time = (now_moscow + timedelta(days=1)).replace(hour=PUBLISH_START_HOUR, minute=0, second=0, microsecond=0)
     
     return next_time.strftime('%d.%m.%Y %H:%M МСК')
 
 def get_next_peak_time() -> str:
-    """Возвращает время следующего пикового часа"""
     now_moscow = datetime.now(MOSCOW_TZ)
     current_hour = now_moscow.hour
     
     for start, end in PEAK_HOURS:
         if current_hour < start:
-            next_time = now_moscow.replace(
-                hour=start, minute=0, second=0, microsecond=0
-            )
+            next_time = now_moscow.replace(hour=start, minute=0, second=0, microsecond=0)
             return next_time.strftime('%d.%m.%Y %H:%M МСК')
     
-    # Если все пиковые часы прошли, следующий пик завтра
     next_start = PEAK_HOURS[0][0]
-    next_time = (now_moscow + timedelta(days=1)).replace(
-        hour=next_start, minute=0, second=0, microsecond=0
-    )
+    next_time = (now_moscow + timedelta(days=1)).replace(hour=next_start, minute=0, second=0, microsecond=0)
     return next_time.strftime('%d.%m.%Y %H:%M МСК')
 
 # ============================================
@@ -1062,7 +1072,10 @@ def generate_hashtags(entry, feed_info):
             'armenia': '#армения',
             'azerbaijan': '#азербайджан',
             'kyrgyzstan': '#кыргызстан',
-            'moldova': '#молдова'
+            'moldova': '#молдова',
+            'china': '#китай',
+            'japan': '#япония',
+            'korea': '#корея'
         }
         if country in country_tags:
             tags.append(country_tags[country])
@@ -1077,7 +1090,7 @@ def generate_hashtags(entry, feed_info):
         'hyundai': '#hyundai', 'kia': '#kia', 'lada': '#лада',
         'bugatti': '#bugatti', 'mclaren': '#mclaren', 'rolls-royce': '#rollsroyce',
         'chery': '#chery', 'haval': '#haval', 'geely': '#geely',
-        'changan': '#changan'
+        'changan': '#changan', 'byd': '#byd', 'zeekr': '#zeekr', 'nio': '#nio'
     }
     
     for brand, tag in brands.items():
@@ -1142,29 +1155,14 @@ def send_news_to_channel(message, image_url=None):
     try:
         if image_url and ENABLE_IMAGES:
             try:
-                bot.send_photo(
-                    CHANNEL_ID,
-                    image_url,
-                    caption=message,
-                    parse_mode='Markdown'
-                )
+                bot.send_photo(CHANNEL_ID, image_url, caption=message, parse_mode='Markdown')
                 return True
             except Exception as img_error:
-                logger.warning(f"⚠️ Не удалось отправить изображение")
-                bot.send_message(
-                    CHANNEL_ID,
-                    message,
-                    parse_mode='Markdown',
-                    disable_web_page_preview=False
-                )
+                logger.warning("⚠️ Не удалось отправить изображение")
+                bot.send_message(CHANNEL_ID, message, parse_mode='Markdown', disable_web_page_preview=False)
                 return True
         else:
-            bot.send_message(
-                CHANNEL_ID,
-                message,
-                parse_mode='Markdown',
-                disable_web_page_preview=False
-            )
+            bot.send_message(CHANNEL_ID, message, parse_mode='Markdown', disable_web_page_preview=False)
             return True
     except Exception as e:
         logger.error(f"Ошибка отправки в канал: {e}")
@@ -1207,7 +1205,7 @@ def generate_news_key(entry):
               'lamborghini', 'bugatti', 'mclaren', 'corvette', 'chevrolet',
               'ford', 'toyota', 'honda', 'nissan', 'mazda', 'lexus',
               'lada', 'уаз', 'камаз', 'автоваз', 'byd', 'nio', 'xpeng',
-              'geely', 'chery', 'haval', 'changan', 'exeed']
+              'geely', 'chery', 'haval', 'changan', 'exeed', 'zeekr']
     
     found_brands = [brand for brand in brands if brand in text.lower()]
     brands_key = '_'.join(sorted(found_brands))
@@ -1350,33 +1348,28 @@ def fetch_and_publish():
     
     all_news = []
     
-    # 🌙 ПРОВЕРКА ВРЕМЕНИ ПУБЛИКАЦИИ
     if not is_publishing_time():
         next_time = get_next_publish_time()
         logger.info(f"🌙 Ночной режим. Публикация пропущена.")
         logger.info(f"🕐 Следующая публикация: {next_time}")
         return 0, 0
     
-    # 🕐 ПРОВЕРКА ПИКОВОГО ЧАСА (гибкий лимит)
     if not is_peak_hour():
         next_peak = get_next_peak_time()
         logger.info(f"⏸️ Неактивный час. Публикация пропущена.")
         logger.info(f"🕐 Следующий пиковый час: {next_peak}")
         return 0, 0
     
-    # Проверяем лимиты
     daily_remaining = get_daily_post_remaining()
     motorsport_remaining = get_motorsport_remaining()
     
     logger.info(f"📊 Осталось слотов на сегодня: {daily_remaining}/{DAILY_POST_LIMIT}")
     logger.info(f" Осталось слотов для спорта: {motorsport_remaining}/{MOTORSPORT_DAILY_LIMIT}")
     
-    # Если дневной лимит достигнут — пропускаем цикл
     if daily_remaining <= 0:
         logger.info(f"⏭️ Дневной лимит постов достигнут ({DAILY_POST_LIMIT}/день). Пропускаем цикл.")
         return 0, 0
     
-    # 🎯 ЛИМИТ ЗА ЦИКЛ: 1 пост
     max_per_cycle = MAX_POSTS_PER_CYCLE
     
     logger.info(f"Начинаем проверку {len(RSS_FEEDS)} источников...")
@@ -1436,22 +1429,18 @@ def fetch_and_publish():
             failed_sources += 1
             continue
     
-    # Сортируем по рейтингу (от большего к меньшему)
     all_news.sort(key=lambda x: x['score'], reverse=True)
     
     logger.info(f"📊 Рабочих источников: {working_sources} | Не рабочих: {failed_sources}")
     logger.info(f"📰 Собрано {len(all_news)} новостей до дедупликации")
     
-    # Дедупликация
     all_news = remove_duplicates(all_news)
     logger.info(f"✨ После дедупликации: {len(all_news)} уникальных новостей")
     
-    # 🎯 БЕРЁМ ТОЛЬКО ТОП-1 НОВОСТЬ ЗА ЦИКЛ
     all_news = all_news[:max_per_cycle]
     
     logger.info(f" Отобрано ТОП-{len(all_news)} новостей для этого цикла (лимит: {max_per_cycle})")
     
-    # Балансировка по категориям
     russian_count = 0
     foreign_count = 0
     cis_count = 0
@@ -1470,7 +1459,6 @@ def fetch_and_publish():
             skipped_count += 1
             continue
         
-        # Лимит спортивных новостей
         if is_motorsport:
             if motorsport_count >= motorsport_remaining:
                 skipped_count += 1
@@ -1478,7 +1466,6 @@ def fetch_and_publish():
                 continue
             motorsport_count += 1
         
-        # Балансировка: не более 50% российских новостей
         if is_russian:
             if foreign_count + cis_count >= russian_count:
                 russian_count += 1
@@ -1499,11 +1486,9 @@ def fetch_and_publish():
     logger.info(f" Отобрано {len(published_news)} новостей для публикации в этом цикле")
     logger.info(f"🏁 Спортивных новостей: {motorsport_count}")
     
-    # Публикуем
     posts_published_today = 0
     
     for news_data in published_news:
-        # Проверяем дневной лимит
         if posts_published_today >= daily_remaining:
             logger.info(f"⏭️ Дневной лимит постов достигнут ({DAILY_POST_LIMIT}/день)")
             break
@@ -1532,9 +1517,10 @@ def fetch_and_publish():
                 
                 new_count += 1
                 country = feed_info.get('country', 'world')
-                flag = {'russia': '🇷', 'belarus': '🇧', 'kazakhstan': '🇰',
-                        'armenia': '🇦🇲', 'azerbaijan': '🇿', 
-                        'kyrgyzstan': '🇰🇬', 'moldova': '🇲🇩'}.get(country, '')
+                flag = {'russia': '🇷🇺', 'belarus': '🇧🇾', 'kazakhstan': '🇰🇿',
+                        'armenia': '🇦🇲', 'azerbaijan': '🇦🇿', 
+                        'kyrgyzstan': '🇰🇬', 'moldova': '🇲🇩',
+                        'china': '🇨🇳', 'japan': '🇯🇵', 'korea': '🇰🇷'}.get(country, '🌍')
                 source_name = feed_info.get('name', 'Unknown')
                 logger.info(f"✅ [{flag}] {source_name} (рейтинг {score:.2f}): {title[:50]}...")
                 logger.info(f"📊 Пост {new_daily_count}/{DAILY_POST_LIMIT} за сегодня")
@@ -1546,7 +1532,7 @@ def fetch_and_publish():
             error_count += 1
             continue
     
-    logger.info(f" Итог: ✅{new_count} | 🇺{russian_count} | СНГ{cis_count} | 🌍{foreign_count} | 🏁{motorsport_count} | ️{skipped_count} | ❌{error_count}")
+    logger.info(f" Итог: ✅{new_count} | 🇷🇺{russian_count} | СНГ{cis_count} | 🌍{foreign_count} | 🏁{motorsport_count} | ️{skipped_count} | ❌{error_count}")
     logger.info(f"📊 Опубликовано в этом цикле: {posts_published_today}")
     logger.info(f"📊 Всего сегодня: {load_daily_post_count()}/{DAILY_POST_LIMIT}")
     return new_count, error_count
@@ -1554,14 +1540,13 @@ def fetch_and_publish():
 def send_startup_message():
     try:
         now_moscow = datetime.now(MOSCOW_TZ).strftime('%H:%M МСК')
-        
         peak_hours_str = ', '.join([f"{start}:00-{end}:00" for start, end in PEAK_HOURS])
         
         startup_message = (
             "🤖 *Auto imPulse News Bot запущен!*\n\n"
-            f"📡 Источников: {len(RSS_FEEDS)}\n"
+            f"📡 Источников: {len(RSS_FEEDS)} (включая Китай, Японию, Корею)\n"
             f" Страны: Россия, Беларусь, Казахстан, Армения,\n"
-            f"      Азербайджан, Кыргызстан, Молдова\n"
+            f"      Азербайджан, Кыргызстан, Молдова, Китай, Япония, Корея\n"
             f"      + Великобритания, США, мир\n"
             f"⏱️ Интервал: {CHECK_INTERVAL // 60} мин\n"
             f"📈 Мин. рейтинг: {MIN_SCORE}/10\n"
@@ -1610,9 +1595,9 @@ def check_channel_access():
         return False
 
 def main():
-    logger.info("=" * 50)
+    logger.info("=" * 60)
     logger.info("Auto imPulse News Bot запускается...")
-    logger.info("=" * 50)
+    logger.info("=" * 60)
     
     if not check_channel_access():
         logger.error(" Нет доступа к каналу!")
