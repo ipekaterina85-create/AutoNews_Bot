@@ -1179,17 +1179,7 @@ def format_message(entry, feed_info, score, category):
     cat_emoji = category['emoji']
     cat_name = category['name']
 
-    if score >= 7:
-        hot_indicator = "🔥🔥 *ГОРЯЧАЯ НОВОСТЬ*\n\n"
-    elif score >= 5:
-        hot_indicator = "🔥 *ТОП*\n\n"
-    elif score >= 3:
-        hot_indicator = "🔥 *ИНТЕРЕСНО*\n\n"
-    else:
-        hot_indicator = ""
-
-    message = hot_indicator
-    message += f"{cat_emoji} *{translated_title}*\n\n"
+    message = f"{cat_emoji} *{translated_title}*\n\n"
 
     if translated_summary:
         message += f"{translated_summary}\n\n"
