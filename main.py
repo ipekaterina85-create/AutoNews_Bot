@@ -785,17 +785,26 @@ def calculate_news_score(entry, feed_info):
     return round(score, 2), matched_keywords
 
 def get_news_category(entry, feed_info):
+    # 1. Если у источника явно задана категория, используем её
+    if 'category' in feed_info and feed_info['category'] in CATEGORIES:
+        return feed_info['category'], CATEGORIES[feed_info['category']]
+    
+    # 2. Если категории нет, но есть страна, мапим страну на правильную категорию
+    country = feed_info.get('country', '')
+    if country in ['uk', 'usa', 'world']:
+        return 'general', {'emoji': '🌍', 'name': 'Мир'}
+    if country in ['china', 'japan', 'korea']:
+        return country, CATEGORIES[country]
+    
+    # 3. Только если ничего не задано, ищем по ключевым словам (но ИСКЛЮЧАЕМ russia, чтобы избежать ложных срабатываний на английские тексты)
     title = entry.get('title', '').lower()
     summary = entry.get('summary', '').lower()
     text = f"{title} {summary}"
 
-    if 'category' in feed_info:
-        cat_id = feed_info['category']
-        if cat_id in CATEGORIES:
-            if cat_id in ['russia', 'cis', 'china', 'japan', 'korea']:
-                return cat_id, CATEGORIES[cat_id]
-
     for cat_id, cat_info in CATEGORIES.items():
+        if cat_id == 'russia':
+            continue  # Не определяем Россию по ключевым словам в иностранных лентах
+            
         for keyword in cat_info['keywords']:
             if keyword in text:
                 return cat_id, cat_info
@@ -1194,7 +1203,26 @@ def format_message(entry, feed_info, score, category):
         message += f"{translated_summary}\n\n"
 
     message += "━━━━━━━━━━━━━━━━━━━\n"
-    message += f" Рейтинг: {score}/10\n"
+    # Ограничиваем отображаемый рейтинг максимумом 10.0
+    display_score = min(score, 10.0)
+    
+    if display_score >= 7:
+        hot_indicator = "🔥🔥🔥 *ГОРЯЧАЯ НОВОСТЬ*\n\n"
+    elif display_score >= 5:
+        hot_indicator = "🔥 *ТОП*\n\n"
+    elif display_score >= 3:
+        hot_indicator = "🔥 *ИНТЕРЕСНО*\n\n"
+    else:
+        hot_indicator = ""
+
+    message = hot_indicator
+    message += f"{cat_emoji} *{translated_title}*\n\n"
+    
+    if translated_summary:
+        message += f"{translated_summary}\n\n"
+    
+    message += "━━━━━━━━━━━━━━━━━━━\n"
+    message += f" Рейтинг: {display_score}/10\n"  # <-- ИСПРАВЛЕНО ЗДЕСЬ
     message += f"📰 Источник: {source_name} {region}\n"
     message += f"🏷️ Категория: {cat_name}\n"
     message += f"\n🔗 [Читать полностью]({link})\n\n"
@@ -1456,6 +1484,12 @@ def fetch_and_publish():
             for entry in feed.entries[:source_limit]:
                 try:
                     news_id = get_news_id(entry)
+                    
+                    # 🚫 ФИЛЬТР МУСОРА: Отсекаем страницы с ошибками сервера (Error 500 и т.п.)
+                    title_check = entry.get('title', '').lower()
+                    if 'error 500' in title_check or 'that’s an error' in title_check or 'server error' in title_check or 'that’s all we know' in title_check:
+                        logger.warning(f"⏭️ Пропуск страницы ошибки сервера: {entry.get('title')}")
+                        continue
 
                     if news_id in published:
                         continue
