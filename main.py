@@ -15,7 +15,7 @@ import feedparser
 import requests
 from telebot import TeleBot
 from telebot import apihelper
-from deep_translator import GoogleTranslator
+from deep_translator import GoogleTranslator, MyMemoryTranslator
 
 # Устанавливаем timeout для всех запросов
 socket.setdefaulttimeout(30)
@@ -101,7 +101,7 @@ class GoogleTranslatorPro:
     def __init__(self):
         self.translator = GoogleTranslator(source='auto', target='ru')
         self.last_call_time = 0
-        self.min_interval = 0.3
+        self.min_interval = 1.5  # Увеличиваем паузу до 1.5 секунд между запросами
         self.daily_chars_used = 0
         self.daily_limit = 1000000
 
@@ -1012,19 +1012,28 @@ def get_news_id(entry):
     unique_str = f"{entry.get('title', '')}{entry.get('link', '')}"
     return hashlib.md5(unique_str.encode('utf-8')).hexdigest()
 
-def translate_text(text, source_lang='en'):
-    """Пуленепробиваемая: при любой проблеме возвращает исходный текст."""
+def translate_text(text, source_lang='auto'):
+    """Переводит текст с резервным методом на случай блокировки Google"""
     if not ENABLE_TRANSLATION:
         return text
     if 'translator' not in globals() or translator is None:
         return text
     if not text or len(text.strip()) == 0:
         return ""
+    
     try:
+        # Пытаемся перевести через Google (основной метод)
         return translator.translate(text, source_lang, 'ru')
     except Exception as e:
-        logger.warning(f"Ошибка перевода: {e}")
-        return text
+        logger.warning(f"⚠️ Google Translate заблокировал запрос: {e}. Пробуем резервный метод...")
+        try:
+            # Резервный метод: MyMemory (бесплатный, менее строгий к IP)
+            backup_translator = MyMemoryTranslator(source=source_lang if source_lang != 'auto' else 'auto', target='ru')
+            return backup_translator.translate(text)
+        except Exception as e2:
+            logger.error(f"❌ Ошибка резервного перевода (MyMemory): {e2}")
+            # Если оба метода не сработали, возвращаем исходный текст, чтобы бот не упал
+            return text
 
 def clean_html(text):
     if not text:
