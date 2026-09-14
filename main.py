@@ -201,14 +201,30 @@ class GoogleTranslatorPro:
         return translated
 
     def _translate_chunk(self, text, source_lang, target_lang):
+    """Перевод с retry-логикой: при rate limit или 500 ждём и пробуем снова."""
+    max_retries = 3
+    for attempt in range(max_retries):
         try:
             result = self.translator.translate(text)
             self.last_call_time = time.time()
             self.daily_chars_used += len(text)
             return result if result else text
         except Exception as e:
+            error_str = str(e).lower()
+            # Ловим rate limit и серверные ошибки Google
+            if ('too many requests' in error_str or 
+                '500' in error_str or 
+                'server error' in error_str or
+                '503' in error_str):
+                wait_time = (attempt + 1) * 5  # 5, 10, 15 секунд
+                logger.warning(f"⏳ Google rate limit / 500, жду {wait_time} сек (попытка {attempt+1}/{max_retries})")
+                time.sleep(wait_time)
+                continue
+            # Другая ошибка — не ретраим
             logger.warning(f"Ошибка перевода куска: {e}")
             return text
+    logger.warning(f"❌ Не удалось перевести после {max_retries} попыток")
+    return text
 
     def _apply_glossary(self, text):
         result = text
