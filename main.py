@@ -119,11 +119,10 @@ class SmartTranslator:
                 except ImportError:
                     from deep_translator import DeepLTranslator as DeeplTranslator
                 try:
-                    self.deepl = DeeplTranslator(api_key=deepl_key, source='EN', target='RU',
+                    self.deepl = DeeplTranslator(api_key=deepl_key, source='en', target='ru',
                                                  use_free_api=deepl_key.endswith(':fx'))
                 except TypeError:
-                    # старая версия без параметра use_free_api
-                    self.deepl = DeeplTranslator(api_key=deepl_key, source='EN', target='RU')
+                    self.deepl = DeeplTranslator(api_key=deepl_key, source='en', target='ru')
                 logger.info("✅ DeepL подключён основным переводчиком")
             except Exception as e:
                 logger.warning(f"DeepL не подключился: {e}")
@@ -203,7 +202,7 @@ class SmartTranslator:
     # ---------- бэкенды ----------
     def _try_deepl(self, text, source_lang):
         try:
-            src = {'en': 'EN', 'ja': 'JA', 'ru': 'RU', 'de': 'DE', 'fr': 'FR', 'zh': 'ZH'}.get(source_lang, 'EN')
+            src = {'en': 'en', 'ja': 'ja', 'ru': 'ru', 'de': 'de', 'fr': 'fr', 'zh': 'zh'}.get(source_lang, 'en')
             self.deepl.source = src
             res = self.deepl.translate(text)
             return res if res and self._is_russian(res) else None
