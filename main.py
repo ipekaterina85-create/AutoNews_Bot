@@ -113,8 +113,17 @@ class SmartTranslator:
         deepl_key = os.environ.get('DEEPL_API_KEY', '')
         if deepl_key:
             try:
-                from deep_translator import DeepLTranslator
-                self.deepl = DeepLTranslator(api_key=deepl_key, source='EN', target='RU')
+                # В разных версиях библиотеки класс зовётся DeeplTranslator или DeepLTranslator
+                try:
+                    from deep_translator import DeeplTranslator
+                except ImportError:
+                    from deep_translator import DeepLTranslator as DeeplTranslator
+                try:
+                    self.deepl = DeeplTranslator(api_key=deepl_key, source='EN', target='RU',
+                                                 use_free_api=deepl_key.endswith(':fx'))
+                except TypeError:
+                    # старая версия без параметра use_free_api
+                    self.deepl = DeeplTranslator(api_key=deepl_key, source='EN', target='RU')
                 logger.info("✅ DeepL подключён основным переводчиком")
             except Exception as e:
                 logger.warning(f"DeepL не подключился: {e}")
