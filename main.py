@@ -201,14 +201,39 @@ class SmartTranslator:
 
     # ---------- бэкенды ----------
     def _try_deepl(self, text, source_lang):
-        try:
-            src = {'en': 'en', 'ja': 'ja', 'ru': 'ru', 'de': 'de', 'fr': 'fr', 'zh': 'zh'}.get(source_lang, 'en')
-            self.deepl.source = src
-            res = self.deepl.translate(text)
-            return res if res and self._is_russian(res) else None
-        except Exception as e:
-            logger.warning(f"DeepL ошибка: {str(e)[:120]}")
+    try:
+        auth_key = os.environ.get('DEEPL_API_KEY', '')
+        if not auth_key:
             return None
+        
+        # Free API использует api-free.deepl.com, Pro — api.deepl.com
+        base_url = 'https://api-free.deepl.com' if auth_key.endswith(':fx') else 'https://api.deepl.com'
+        
+        src_map = {'en': 'EN', 'ja': 'JA', 'ru': 'RU', 'de': 'DE', 
+                   'fr': 'FR', 'zh': 'ZH', 'ko': 'KO'}
+        source = src_map.get(source_lang, 'EN')
+        
+        response = requests.post(
+            f"{base_url}/v2/translate",
+            data={
+                'auth_key': auth_key,
+                'text': text,
+                'source_lang': source,
+                'target_lang': 'RU'
+            },
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            translated = result['translations'][0]['text']
+            return translated if translated and self._is_russian(translated) else None
+        else:
+            logger.warning(f"DeepL HTTP {response.status_code}: {response.text[:100]}")
+            return None
+    except Exception as e:
+        logger.warning(f"DeepL ошибка: {str(e)[:120]}")
+        return None
 
     def _try_google(self, text):
         try:
