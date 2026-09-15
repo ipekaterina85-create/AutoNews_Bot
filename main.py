@@ -101,7 +101,7 @@ class GoogleTranslatorPro:
     def __init__(self):
         self.translator = GoogleTranslator(source='auto', target='ru')
         self.last_call_time = 0
-        self.min_interval = 1.5  # Увеличиваем паузу до 1.5 секунд между запросами
+        self.min_interval = 3.0  # Увеличиваем паузу до 1.5 секунд между запросами
         self.daily_chars_used = 0
         self.daily_limit = 1000000
 
