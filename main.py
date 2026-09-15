@@ -214,10 +214,16 @@ class SmartTranslator:
             logger.warning(f"Google ошибка: {str(e)[:120]}")
             return None
 
+    # MyMemory требует полные региональные коды, а не 'en'/'ru'
+    MM_LANGS = {
+        'en': 'en-GB', 'ja': 'ja-JP', 'de': 'de-DE', 'fr': 'fr-FR',
+        'ru': 'ru-RU', 'zh': 'zh-CN', 'ko': 'ko-KR', 'es': 'es-ES', 'it': 'it-IT',
+    }
+
     def _try_mymemory(self, text, source_lang):
         try:
-            src = source_lang if source_lang in ('en', 'ja', 'de', 'fr') else 'en'
-            mm = MyMemoryTranslator(source=src, target='ru')
+            src = self.MM_LANGS.get(source_lang, 'en-GB')
+            mm = MyMemoryTranslator(source=src, target='ru-RU')
             out = []
             for chunk in self._split_480(text):
                 res = mm.translate(chunk)
